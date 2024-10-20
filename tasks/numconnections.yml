@@ -1,0 +1,112 @@
+---
+- name: "Number Connections | Gather facts on listening ports"
+  community.general.listen_ports_facts:
+    include_non_listening: true
+
+- name: "Number Connections | Generate summary of etv accounts and ports"
+  ansible.builtin.set_fact:
+    __ports_summary: >-
+      {%- set __ports_summary = [] -%}
+      {%- set xtream_account = 'xtream_account' -%}
+      {%- set portstotal = 'portstotal' -%}
+      {%- set allports = 'allports' -%}
+      {%- for account in __proxy_users | map(attribute='xtream_account') | unique -%}
+      {%- set __total = namespace(value=0) -%}
+        {%- set account_ports = __proxy_users | selectattr('xtream_account', 'equalto', account) | map(attribute='proxy_port') -%}
+        {%- for port in account_ports -%}
+          {%- set __est_ports = (ansible_facts.tcp_listen
+            | selectattr('state', 'equalto', 'ESTABLISHED')
+            | selectattr('name', 'equalto', 'iptv-proxy')
+            | selectattr('address', 'equalto', __firewall_local_ip)
+            | rejectattr('foreign_address', 'match', __firewall_local_ip)
+            | selectattr('port', 'equalto', port)) | length -%}
+          {%- set __total.value = __total.value + __est_ports -%}
+        {%- endfor -%}
+        {%- set item_dict = {
+          xtream_account: account,
+          portstotal: __total.value,
+          allports: account_ports}
+        -%}
+        {%- set __ports_summary = __ports_summary.append(item_dict) if __total.value >= role_iptvservice__max_connections -%}
+      {%- endfor -%}
+      {{ __ports_summary }}
+
+- name: "Number Connections | When Overloaded accounts are found"
+  when: __ports_summary | length >= 1
+  block:
+    - name: "Number Connections | Remove all upstreams for overloaded account"
+      ansible.builtin.replace:
+        path: "{{ __nginx_conf }}"
+        regexp: '^(\s+server.*{{ item.xtream_account }}.*)$'
+        replace: '# \1'
+      become: true
+      loop: "{{ __ports_summary }}"
+      loop_control:
+        label: >-
+          Removing upstream for Account '{{ item.xtream_account }}' from NGINX Config ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
+        index_var: __my_idx
+        extended: true
+        extended_allitems: false
+      notify: Reload nginx
+
+    - name: "Number Connections | Remove upstream firewall ACCEPT rule for overloaded account"
+      ansible.builtin.iptables:
+        chain: INPUT
+        protocol: tcp
+        destination_port: "{{ item.1 }}"
+        jump: ACCEPT
+        state: absent
+      become: true
+      loop: "{{ __ports_summary | subelements('allports') }}"
+      loop_control:
+        label: >-
+          Removing Iptables ACCEPT Rule for Account '{{ item.0.xtream_account }}' Port '{{ item.1 }}' ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
+        index_var: __my_idx
+        extended: true
+        extended_allitems: false
+
+    - name: "Number Connections | Get pids of iptv-proxy processes of overloaded accounts"
+      community.general.pids:
+        pattern: /usr/bin/iptv-proxy --port {{ item.1 }}
+      become: true
+      loop: "{{ __ports_summary | subelements('allports') }}"
+      loop_control:
+        label: >-
+          Getting PID of iptv-proxy process for Account '{{ item.0.xtream_account }}' Port '{{ item.1 }}' ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
+        index_var: __my_idx
+        extended: true
+        extended_allitems: false
+      register: __proxy_pids
+
+    - name: "Number Connections | Kill pids of iptv-proxy processes of overloaded accounts"
+      ansible.builtin.command:
+        cmd: kill "{{ item.pids | first }}"
+      become: true
+      loop: "{{ __proxy_pids.results }}"
+      loop_control:
+        label: >-
+          Killing iptv-proxy PID {{ item.pids | first }} ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
+        index_var: __my_idx
+        extended: true
+        extended_allitems: false
+      changed_when: true
+
+    - name: "Number Connections | Email report of removed upstreams"
+      community.general.mail:
+        from: "{{ role_iptvservice____email_sender }}"
+        to: "{{ role_iptvservice____email_recipients }}"
+        subject: "URGENT: Upstreams removed from IPTV Proxy"
+        host: "{{ role_iptvservice____email_server }}"
+        port: 25
+        secure: never
+        body: "{{ __body }}"
+      vars:
+        __body: |
+          {% for item in __ports_summary %}
+          Removed IPTV Proxy for Account '{{ item.xtream_account }}' with '{{ item.portstotal }}' Connections
+
+          {% endfor %}
+          Port Summary:
+
+          {{ __ports_summary }}
+...

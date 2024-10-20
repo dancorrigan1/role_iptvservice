@@ -1,0 +1,3 @@
+---
+role_iptvservice__iptv_proxy_path: /usr/bin/iptv-proxy
+...

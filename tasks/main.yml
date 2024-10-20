@@ -1,0 +1,56 @@
+---
+- name: "Main | Build dictionary of proxy users"
+  ansible.builtin.set_fact:
+    __proxy_users: >-
+      {%- set ns = namespace(port_count=0) -%}
+      {%- set __proxy_users = [] -%}
+      {%- for proxy in role_iptvservice__credentials -%}
+        {%- for proxy_user in proxy.proxy_users -%}
+          {%- for provider_credential in proxy.provider_credentials -%}
+            {%- set ns.port_count = ns.port_count + 1 -%}
+            {%- set users_dict = {
+              'provider_name': proxy.name,
+              'provider_url': proxy.url,
+              'proxy_name': proxy_user.name,
+              'proxy_username': proxy_user.username,
+              'proxy_pass': proxy_user.password,
+              'proxy_port': role_iptvservice__proxy_start_port + ns.port_count,
+              'xtream_account': provider_credential.account,
+              'xtream_user': provider_credential.username,
+              'xtream_pass': provider_credential.password
+            } -%}
+            {%- do __proxy_users.append(users_dict) -%}
+          {%- endfor -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ __proxy_users }}
+  tags:
+    - always
+
+- name: "Main | Include iptv_proxy task file"
+  ansible.builtin.include_tasks:
+    file: iptv_proxy.yml
+    apply:
+      tags:
+        - iptvproxy
+  tags:
+    - iptvproxy
+
+- name: "Main | Include dailyconnections task file"
+  ansible.builtin.include_tasks:
+    file: dailyconnections.yml
+    apply:
+      tags:
+        - dailyconnections
+  tags:
+    - dailyconnections
+
+- name: "Main | Include numconnections task file"
+  ansible.builtin.include_tasks:
+    file: numconnections.yml
+    apply:
+      tags:
+        - numconnections
+  tags:
+    - numconnections
+...
