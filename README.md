@@ -41,8 +41,9 @@ role_tvservice__known_ips:
     name: "Friend2 Home IP"
   9.10.11.12:
     name: "Friend3 Home IP"
-
+```
 # credentials (I store in vars/credentials.yml on playbook)
+```yaml
 role_tvservice__credentials:
   - name: "iptv service 1"
     url: "http://iptv.com:12345"
