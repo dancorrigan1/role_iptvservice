@@ -114,7 +114,7 @@
       ansible.builtin.set_fact:
         __sorted_total_collections: "{{ __total_connections | dictsort }}"
 
-    - name: "Daily Connections | Create list of IPs used by each user"
+        - name: "Daily Connections | Create list of IPs used by each user"
       ansible.builtin.set_fact:
         __unique_user_ips: >-
           {%- set __unique_user_ips = [] -%}
@@ -124,13 +124,30 @@
             {%- set __matching_log_lines = __iptv_log | select('search', '/' ~ u.proxy_username) -%}
             {%- set __ip_list = __matching_log_lines | map('split', ' ') | map('first') | list | unique -%}
             {%- set item_dict = {
-                'user': u.proxy_username,
-                'ip_list': __ip_list,
+                'user': u.proxy_username
                 }
             -%}
             {%- set _ = __unique_user_ips.append(item_dict) -%}
           {%- endfor -%}
           {{ __unique_user_ips }}
+
+    # - name: "Daily Connections | Create list of IPs used by each user"
+    #   ansible.builtin.set_fact:
+    #     __unique_user_ips: >-
+    #       {%- set __unique_user_ips = [] -%}
+    #       {%- set user = 'user' -%}
+    #       {%- set ip_list = [] -%}
+    #       {%- for u in __proxy_users | sort(attribute='proxy_username') -%}
+    #         {%- set __matching_log_lines = __iptv_log | select('search', '/' ~ u.proxy_username) -%}
+    #         {%- set __ip_list = __matching_log_lines | map('split', ' ') | map('first') | list | unique -%}
+    #         {%- set item_dict = {
+    #             'user': u.proxy_username,
+    #             'ip_list': __ip_list,
+    #             }
+    #         -%}
+    #         {%- set _ = __unique_user_ips.append(item_dict) -%}
+    #       {%- endfor -%}
+    #       {{ __unique_user_ips }}
 
     - debug:
         var: __unique_user_ips
