@@ -114,7 +114,7 @@
       ansible.builtin.set_fact:
         __sorted_total_collections: "{{ __total_connections | dictsort }}"
 
-        - name: "Daily Connections | Create list of IPs used by each user"
+    - name: "Daily Connections | Create list of IPs used by each user"
       ansible.builtin.set_fact:
         __unique_user_ips: >-
           {%- set __unique_user_ips = [] -%}
