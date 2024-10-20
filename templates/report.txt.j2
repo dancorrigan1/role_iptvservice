@@ -21,7 +21,7 @@ checking {{ user.user }}
 IP Org: {{ __ip_info | selectattr('ip', '==', ip) | map(attribute='org') | first }}
 Most Recent Login: {{ __ip_info | selectattr('ip', '==', ip) | map(attribute='recent') | first | split(':') | first }}
 User Agent(s):
-{% set agent_list =  __iptv_log | select('search', '/' ~ user.user) | select('search', ip) | map('split', '\"') | flatten | select('search', role_tvservice__allowed_user_agents | join('|')) | unique %}
+{% set agent_list =  __iptv_log | select('search', '/' ~ user.user) | select('search', ip) | map('split', '\"') | flatten | select('search', role_iptvservice__allowed_user_agents | join('|')) | unique %}
 {% for agent in agent_list  %}
 - {{ agent }}
 {% endfor %}
