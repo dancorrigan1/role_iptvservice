@@ -124,7 +124,8 @@
             {%- set __matching_log_lines = __iptv_log | select('search', '/' ~ u) -%}
             {%- set __ip_list = __matching_log_lines | map('split', ' ') | map('first') | list | unique -%}
             {%- set item_dict = {
-                'user': u
+                'user': u,
+                'ip_list': __ip_list
                 }
             -%}
             {%- set _ = __unique_user_ips.append(item_dict) -%}
