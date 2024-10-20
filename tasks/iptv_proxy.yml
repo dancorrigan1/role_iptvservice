@@ -18,11 +18,12 @@
         "~*{{ agent }}" 1;
         {% endfor %}
       }
+  notify: Reload nginx
 
 - name: "IPTV Proxy | Copy nginx template"
   ansible.builtin.template:
-    src: "{{ __nginx_template }}"
-    dest: "{{ __nginx_conf }}"
+    src: "{{ role_iptvservice__nginx_template }}"
+    dest: "{{ role_iptvservice__nginx_conf }}"
     mode: '0640'
   notify: Reload nginx
 

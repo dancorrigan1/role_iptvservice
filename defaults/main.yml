@@ -1,3 +1,5 @@
 ---
 role_iptvservice__iptv_proxy_path: /usr/bin/iptv-proxy
-...
+role_iptvservice__nginx_template: nginx-site.conf.j2
+role_iptvservice__nginx_conf: /etc/nginx/sites-available/{{ role_iptvservice__iptv_hostname | first }}.conf
+role_iptvservice__nginx_log_prev_day: /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_access.log.1...

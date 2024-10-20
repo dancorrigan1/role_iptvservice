@@ -27,7 +27,7 @@
           portstotal: __total.value,
           allports: account_ports}
         -%}
-        {%- set __ports_summary = __ports_summary.append(item_dict) if __total.value >= role_iptvservice__max_connections -%}
+        {%- set _ = __ports_summary.append(item_dict) if __total.value >= role_iptvservice__max_connections -%}
       {%- endfor -%}
       {{ __ports_summary }}
 
@@ -36,7 +36,7 @@
   block:
     - name: "Number Connections | Remove all upstreams for overloaded account"
       ansible.builtin.replace:
-        path: "{{ __nginx_conf }}"
+        path: "{{ role_iptvservice__nginx_conf }}"
         regexp: '^(\s+server.*{{ item.xtream_account }}.*)$'
         replace: '# \1'
       become: true
@@ -93,8 +93,8 @@
 
     - name: "Number Connections | Email report of removed upstreams"
       community.general.mail:
-        from: "{{ role_iptvservice____email_sender }}"
-        to: "{{ role_iptvservice____email_recipients }}"
+        from: "{{ role_iptvservice__email_sender }}"
+        to: "{{ role_iptvservice__email_recipients }}"
         subject: "URGENT: Upstreams removed from IPTV Proxy"
         host: "{{ role_iptvservice____email_server }}"
         port: 25

@@ -1,13 +1,13 @@
 ---
 - name: "Daily Connections | Check if Previous Day Log Exists"
   ansible.builtin.stat:
-    path: "{{ __nginx_log_prev_day }}"
+    path: "{{ role_iptvservice__nginx_log_prev_day }}"
   register: __previous_day_log_stat
 
 - name: "Daily Connections | Assert that Previous Day Log Exists"
   ansible.builtin.assert:
     that: __previous_day_log_stat.stat.exists | bool
-    msg: "Previous Day Log file {{ __nginx_log_prev_day }} must exist to run a report."
+    msg: "Previous Day Log file {{ role_iptvservice__nginx_log_prev_day }} must exist to run a report."
   when: not __previous_day_log_stat.stat.exists | bool
 
 - name: "Daily Connections | Previous Day Log Exists"
@@ -39,7 +39,7 @@
 
     - name: "Daily Connections | Slurp web server log"
       ansible.builtin.slurp:
-        src: "{{ __nginx_log_prev_day }}"
+        src: "{{ role_iptvservice__nginx_log_prev_day }}"
       register: __log_prev_day
 
     - name: "Daily Connections | Decode web server log"
@@ -72,7 +72,7 @@
     - name: "Daily Connections | Assert there are connections to generate report"
       ansible.builtin.assert:
         that: (__used_ports | dict2items | selectattr('key', 'equalto', none) | selectattr('value', 'equalto', 1) | length) == 0
-        msg: "There were noproxy connections in previous day log."
+        msg: "There were no proxy connections in previous day log."
 
     - name: "Daily Connections | Get account name for each port"
       ansible.builtin.set_fact:
@@ -90,7 +90,7 @@
                count: __count,
                account: __account
                } -%}
-           {%- set __port_account_map = __port_account_map.append(item_dict) -%}
+           {%- set _ = __port_account_map.append(item_dict) -%}
           {%- endfor -%}
           {{ __port_account_map }}
 
@@ -128,7 +128,7 @@
                 'ip_list': __ip_list,
                 }
             -%}
-            {%- do __unique_user_ips.append(item_dict) -%}
+            {%- set _ = __unique_user_ips.append(item_dict) -%}
           {%- endfor -%}
           {{ __unique_user_ips }}
 
@@ -158,7 +158,7 @@
                   recent: __recent,
                 }
             -%}
-            {%- do __ip_info.append(item_dict) -%}
+            {%- set _ = __ip_info.append(item_dict) -%}
           {%- endfor -%}
           {{ __ip_info }}
 

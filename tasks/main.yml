@@ -19,7 +19,7 @@
               'xtream_user': provider_credential.username,
               'xtream_pass': provider_credential.password
             } -%}
-            {%- do __proxy_users.append(users_dict) -%}
+            {%- set _ = __proxy_users.append(users_dict) -%}
           {%- endfor -%}
         {%- endfor -%}
       {%- endfor -%}
