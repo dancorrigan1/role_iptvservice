@@ -1,40 +1,73 @@
 # role_iptvservice
 An Ansible role to create a reverse proxy for multiple users against multiple Xtream code IPTV providers using nginx and iptv-proxy
 
-## TODO Update README with all required variables and usage
+Requirements
+------------
+
+* Collections:
+
+```yaml
+community.general
+```
+* System:
+```yaml
+nginx
+iptables
+```
+
+Role Variables
+--------------
+
+| Variable | Type | Required | Comments |
+|-|:-:|:-:|-|
+| role_iptvservice__iptv_hostname | List | Yes | List of domain names for Web Server and iptv-proxy |
+| role_iptvservice__allowed_user_agents | List | Yes | List of allowed user agents to connect to proxy |
+| role_iptvservice__iptv_ssl_certificate | String | No | SSL Certificate for HTTPS |
+| role_iptvservice__iptv_ssl_certificate_key | String | No | SSL Key for HTTPS |
+| role_iptvservice__iptv_logs_path | String | Yes | Path to store logs |
+| role_iptvservice__max_connections | Int | Yes | Maximum number of connections per provider account |
+| role_iptvservice__report_path | String | Yes | Path to store reports |
+| role_iptvservice__email_sender | String | Yes | Report Sender Email Address |
+| role_iptvservice__email_server | String | Yes | Email Server |
+| role_iptvservice__email_recipients | List | Yes | List of report Email recipients |
+| role_iptvservice__firewall_command | String | Yes | Command to restart iptables firewall |
+| role_iptvservice__firewall_local_ip | String | Yes | IP address of machine running proxy and web server |
+| role_iptvservice__proxy_start_port | Int | Yes | Starting port to use for proxies |
+| role_iptvservice__known_ips | Dict | No | Dictionary that defines known proxy user IPs for report |
+| role_iptvservice__credentials | Dict | Yes | Dictionary that defines proxy and provider credentials |
 
 # role configuration (I store in vars/config.yml on playbook)
 ```yaml
-# iptv webserver config
-role_tvservice__iptv_hostname:
+# Iptv Webserver Config
+role_iptvservice__iptv_hostname:
   - "mysite.com"
   - "www.mysite.com"
 
-role_tvservice__allowed_user_agents:
+role_iptvservice__allowed_user_agents:
   - "Smarters"
   - "TiviMate"
   - "VLC"
 
-role_tvservice__iptv_ssl_certificate: "/etc/letsencrypt/live/{{ role_tvservice__iptv_hostname | first }}/fullchain.pem"
-role_tvservice__iptv_ssl_certificate_key: "/etc/letsencrypt/live/{{ role_tvservice__iptv_hostname | first }}/privkey.pem"
+role_iptvservice__iptv_ssl_certificate: "/etc/letsencrypt/live/{{ role_iptvservice__iptv_hostname | first }}/fullchain.pem"
+role_iptvservice__iptv_ssl_certificate_key: "/etc/letsencrypt/live/{{ role_iptvservice__iptv_hostname | first }}/privkey.pem"
 
 # logging & reports
-role_tvservice__iptv_logs_path: "/root/iptvservice/logs"
-role_tvservice__max_connections: 5
-role_tvservice__report_path: "/root/iptvservice/reports"
-role_tvservice__email_sender: "noreply@mysite.com"
-role_tvservice__email_server: "mysite.com"
-role_tvservice__email_recipients:
+role_iptvservice__iptv_logs_path: "/root/iptvservice/logs"
+role_iptvservice__max_connections: 5
+role_iptvservice__report_path: "/root/iptvservice/reports"
+role_iptvservice__email_sender: "noreply@mysite.com"
+role_iptvservice__email_server: "mysite.com"
+role_iptvservice__email_recipients:
   - "my@email.com"
   - "other@email.com"
 
-# firewall / network
-role_tvservice__firewall_command: "iptables -F"
-role_tvservice__firewall_local_ip: "1.2.3.4"
-role_tvservice__proxy_start_port: 30000
+# Firewall / Network
+role_iptvservice__firewall_command: "iptables -F"
+role_iptvservice__firewall_local_ip: "1.2.3.4"
+role_iptvservice__proxy_start_port: 30000
 
-# known ips
-role_tvservice__known_ips:
+# Known IPs
+role_iptvservice__known_ips:
   1.2.3.4:
     name: "Friend1 Home IP"
   5.6.7.8:
@@ -44,7 +77,7 @@ role_tvservice__known_ips:
 ```
 # credentials (I store in vars/credentials.yml on playbook)
 ```yaml
-role_tvservice__credentials:
+role_iptvservice__credentials:
   - name: "iptv service 1"
     url: "http://iptv.com:12345"
     proxy_users:
@@ -87,16 +120,21 @@ Sample Usage:
       tags:
         - always
 
-    - name: Include role_tvservice
+    - name: Include role_iptvservice
       ansible.builtin.include_role:
-        name: role_tvservice
+        name: role_iptvservice
       tags:
         - always
 ```
 
 Run Usage:
 ```
-ansible-playbook site.yml -t iptvproxy
-ansible-playbook site.yml -t dailyconnections
-ansible-playbook site.yml -t numconnections
+Setup Webserver and run Proxies. Relaunch when adding new credentials
+  ansible-playbook site.yml -t iptvproxy
+
+Run report on previous day connection statistics. Run on daily cron or scheduled job.
+  ansible-playbook site.yml -t dailyconnections
+
+Check number of current active connections and kill processes if provider account is overloaded. Run on frequent cron or scheduled job.
+  ansible-playbook site.yml -t numconnections
 ```
