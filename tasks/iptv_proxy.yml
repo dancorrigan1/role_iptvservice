@@ -64,6 +64,12 @@
   register: __my_iptables_log_output
   changed_when: __my_iptables_log_output.changed | bool
 
+- name: "IPTV Proxy | Ensure logs directory exists"
+  ansible.builtin.file:
+    path: "{{ role_iptvservice__iptv_logs_path }}"
+    state: directory
+    mode: '0750'
+
 - name: "IPTV Proxy | Run iptv-proxy for all users"
   ansible.builtin.shell:
     cmd: >

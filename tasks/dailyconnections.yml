@@ -162,6 +162,12 @@
           {%- endfor -%}
           {{ __ip_info }}
 
+    - name: "Daily Connections | Ensure Reports directory exists"
+      ansible.builtin.file:
+        path: '{{ role_iptvservice__report_path }}'
+        state: directory
+        mode: '0750'
+
     - name: "Daily Connections | Template Report"
       ansible.builtin.template:
         src: report.txt.j2
