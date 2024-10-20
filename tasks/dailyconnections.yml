@@ -120,7 +120,7 @@
           {%- set __unique_user_ips = [] -%}
           {%- set user = 'user' -%}
           {%- set ip_list = [] -%}
-          {%- for u in __proxy_users | sort(attribute='proxy_username') -%}
+          {%- for u in __proxy_users | map(attribute='proxy_username') | unique | sort  -%}
             {%- set __matching_log_lines = __iptv_log | select('search', '/' ~ u.proxy_username) -%}
             {%- set __ip_list = __matching_log_lines | map('split', ' ') | map('first') | list | unique -%}
             {%- set item_dict = {
