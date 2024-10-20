@@ -1,10 +1,10 @@
 # role_iptvservice
 An Ansible role to create a reverse proxy for multiple users against multiple Xtream code IPTV providers using nginx and iptv-proxy
 
-## Update README with all required variables and usage
+## TODO Update README with all required variables and usage
 
 # role configuration (I store in vars/config.yml on playbook)
-
+```yaml
 # iptv webserver config
 role_tvservice__iptv_hostname:
   - "mysite.com"
@@ -67,10 +67,10 @@ role_tvservice__credentials:
     provider_credentials:
       - { account: "account1", username: "providerusername1", password: "providerpassword1" }
       - { account: "account2", username: "providerusername2", password: "providerpassword2" }
-
+```
 
 Sample Usage:
-
+```yaml
 - name: IPTV Service
   hosts: my_server
   become: true
@@ -91,7 +91,11 @@ Sample Usage:
         name: role_tvservice
       tags:
         - always
+```
 
+Run Usage:
+```
 ansible-playbook site.yml -t iptvproxy
 ansible-playbook site.yml -t dailyconnections
 ansible-playbook site.yml -t numconnections
+```
