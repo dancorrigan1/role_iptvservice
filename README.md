@@ -25,6 +25,7 @@ Role Variables
 | role_iptvservice__iptv_ssl_certificate | String | No | SSL Certificate for HTTPS |
 | role_iptvservice__iptv_ssl_certificate_key | String | No | SSL Key for HTTPS |
 | role_iptvservice__iptv_logs_path | String | Yes | Path to store logs |
+| role_iptvservice__iptv_proxy_path | String | No | Path to iptv-proxy (Defaults to /usr/bin/iptv-proxy) |
 | role_iptvservice__max_connections | Int | Yes | Maximum number of connections per provider account |
 | role_iptvservice__report_path | String | Yes | Path to store reports |
 | role_iptvservice__email_sender | String | Yes | Report Sender Email Address |
@@ -50,6 +51,7 @@ role_iptvservice__allowed_user_agents:
 
 role_iptvservice__iptv_ssl_certificate: "/etc/letsencrypt/live/{{ role_iptvservice__iptv_hostname | first }}/fullchain.pem"
 role_iptvservice__iptv_ssl_certificate_key: "/etc/letsencrypt/live/{{ role_iptvservice__iptv_hostname | first }}/privkey.pem"
+role_iptvservice__iptv_proxy_path: /usr/bin/iptv-proxy
 
 # logging & reports
 role_iptvservice__iptv_logs_path: "/root/iptvservice/logs"
