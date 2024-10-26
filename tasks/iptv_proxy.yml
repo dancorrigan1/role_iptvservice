@@ -4,47 +4,6 @@
     __iptv_starting_port: "{{ __proxy_users | map(attribute='proxy_port') | first }}"
     __iptv_ending_port: "{{ __proxy_users | map(attribute='proxy_port') | last }}"
 
-- name: "IPTV Proxy | Add http user agents map block to nginx.conf"
-  ansible.builtin.blockinfile:
-    path: /etc/nginx/nginx.conf
-    marker: "# -- {mark} ANSIBLE MANAGED BLOCK --"
-    insertafter: "http {"
-    block: |
-
-      # allowed user agents for iptv proxy
-      map $http_user_agent $iptv_agents {
-        default 0;
-        {% for agent in role_iptvservice__allowed_user_agents %}
-        "~*{{ agent }}" 1;
-        {% endfor %}
-      }
-  notify: Reload nginx
-
-- name: "IPTV Proxy | Add Let's Encrypt Config"
-  ansible.builtin.copy:
-    src: letsencrypt.conf
-    dest: /etc/nginx/snippets/
-    mode: '0644'
-    owner: root
-    group: root
-  notify: Reload nginx
-
-- name: "IPTV Proxy | Add Let's Encrypt Webroot"
-  ansible.builtin.file:
-    path: /var/www/letsencrypt
-    state: directory
-    mode: '0750'
-    owner: root
-    group: root
-  notify: Reload nginx
-
-- name: "IPTV Proxy | Copy nginx template"
-  ansible.builtin.template:
-    src: "{{ role_iptvservice__nginx_template }}"
-    dest: "{{ role_iptvservice__nginx_conf }}"
-    mode: '0640'
-  notify: Reload nginx
-
 - name: "IPTV Proxy | Refresh main firewall"
   ansible.builtin.command:
     cmd: "{{ role_iptvservice__firewall_command }}"
@@ -112,3 +71,4 @@
   register: __my_iptv_output
   changed_when: __my_iptv_output.rc == 0
   failed_when: __my_iptv_output.rc != 0
+...

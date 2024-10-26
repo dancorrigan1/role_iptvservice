@@ -27,6 +27,15 @@
   tags:
     - always
 
+- name: "Main | Include nginx task file"
+  ansible.builtin.include_tasks:
+    file: nginx.yml
+    apply:
+      tags:
+        - iptvproxy
+  tags:
+    - iptvproxy
+
 - name: "Main | Include iptv_proxy task file"
   ansible.builtin.include_tasks:
     file: iptv_proxy.yml
