@@ -20,6 +20,22 @@
       }
   notify: Reload nginx
 
+- name: "IPTV Proxy | Add Let's Encrypt Config"
+  ansible.builtin.copy:
+    src: letsencrypt.conf
+    dest: /etc/nginx/snippets/
+    mode: '0644'
+    owner: root
+    group: root
+
+- name: "IPTV Proxy | Add Let's Encrypt Webroot"
+  ansible.builtin.file:
+    path: /var/www/letsencrypt
+    state: directory
+    mode: '0750'
+    owner: root
+    group: root
+
 - name: "IPTV Proxy | Copy nginx template"
   ansible.builtin.template:
     src: "{{ role_iptvservice__nginx_template }}"
