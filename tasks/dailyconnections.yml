@@ -198,5 +198,4 @@
     - name: "Daily Connections | Fail Playbook"
       ansible.builtin.fail:
         msg: "Something went wrong with the report."
-
 ...
