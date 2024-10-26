@@ -80,7 +80,7 @@ server {
    error_log /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_error.log;
    index index.html index.php;
    root /var/www/html/{{ role_iptvservice__iptv_hostname | first }};
-
+   include /etc/nginx/snippets/letsencrypt.conf;
 {% for provider in role_iptvservice__credentials  %}
 
    # proxies for {{ provider.name }}
