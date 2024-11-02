@@ -1,8 +1,8 @@
 galaxy_info:
   role_name: role_iptvservice
   namespace: dancorrigan1
-  author: dancorrigan1
-  description: iptv-proxy playbook
+  author: Dan Corrigan
+  description: Ansible role to create a reverse proxy for multiple users against multiple Xtream code IPTV providers using nginx and iptv-proxy
   license: BSD-3-Clause
   min_ansible_version: '2.9'
   galaxy_tags: []
