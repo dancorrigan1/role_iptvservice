@@ -17,8 +17,8 @@
           {%- set __est_ports = (ansible_facts.tcp_listen
             | selectattr('state', 'equalto', 'ESTABLISHED')
             | selectattr('name', 'equalto', 'iptv-proxy')
-            | selectattr('address', 'equalto', __firewall_local_ip)
-            | rejectattr('foreign_address', 'match', __firewall_local_ip)
+            | selectattr('address', 'equalto', role_iptvservice__firewall_local_ip)
+            | rejectattr('foreign_address', 'match', role_iptvservice__firewall_local_ip)
             | selectattr('port', 'equalto', port)) | length -%}
           {%- set __total.value = __total.value + __est_ports -%}
         {%- endfor -%}
