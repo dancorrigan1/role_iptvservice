@@ -96,7 +96,7 @@
         from: "{{ role_iptvservice__email_sender }}"
         to: "{{ role_iptvservice__email_recipients }}"
         subject: "URGENT: Upstreams removed from IPTV Proxy"
-        host: "{{ role_iptvservice____email_server }}"
+        host: "{{ role_iptvservice__email_server }}"
         port: 25
         secure: never
         body: "{{ __body }}"
