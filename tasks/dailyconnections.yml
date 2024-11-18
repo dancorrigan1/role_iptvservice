@@ -45,11 +45,13 @@
     - name: "Daily Connections | Decode web server log"
       ansible.builtin.set_fact:
         __full_log: "{{ __log_prev_day['content'] | b64decode }}"
+      no_log: true
 
     - name: "Daily Connections | Select only iptv matching log lines"
       ansible.builtin.set_fact:
         __iptv_log: >-
           {{ __full_log.splitlines() | select('search', '(/player_api.php|/xmltv.php|/live)') | select('search', role_iptvservice__firewall_local_ip) }}
+      no_log: true
 
     - name: "Daily Connections | Unique Connected IPs"
       ansible.builtin.set_fact:
@@ -64,6 +66,7 @@
             {%- endif -%}
           {%- endfor -%}
           {{ unique_lines }}
+      no_log: true
 
     - name: "Daily Connections | Unique Used Upstream ports"
       ansible.builtin.set_fact:
