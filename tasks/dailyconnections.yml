@@ -48,7 +48,7 @@
 
     - name: "Daily Connections | Select only iptv matching log lines"
       ansible.builtin.set_fact:
-        __iptv_log: "{{ __full_log.splitlines() | select('search', '(/player_api.php|/xmltv.php|/live)') | list }}"
+        __iptv_log: "{{ __full_log.splitlines() | select('search', '(/player_api.php|/xmltv.php|/live)') | | select('search', role_iptvservice__firewall_local_ip) }}"
 
     - name: "Daily Connections | Unique Connected IPs"
       ansible.builtin.set_fact:
