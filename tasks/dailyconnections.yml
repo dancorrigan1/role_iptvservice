@@ -118,13 +118,14 @@
       ansible.builtin.set_fact:
         __sorted_total_collections: "{{ __total_connections | dictsort }}"
 
+# {%- for u in __proxy_users | map(attribute='proxy_username') | unique | sort -%}
     - name: "Daily Connections | Create list of IPs used by each user"
       ansible.builtin.set_fact:
         __unique_user_ips: >-
           {%- set __unique_user_ips = [] -%}
           {%- set user = 'user' -%}
           {%- set ip_list = [] -%}
-          {%- for u in __proxy_users | map(attribute='proxy_username') | unique | sort -%}
+          {%- for u in __proxy_users -%}
             {%- set __matching_log_lines = __iptv_log | select('search', '/' ~ u) -%}
             {%- set __ip_list = __matching_log_lines | map('split', ' ') | map('first') | list | unique -%}
             {%- set item_dict = {
