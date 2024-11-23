@@ -123,13 +123,16 @@
         __unique_user_ips: >-
           {%- set __unique_user_ips = [] -%}
           {%- set user = 'user' -%}
+          {%- set provider = 'provider' -%}
           {%- set ip_list = [] -%}
           {%- for u in __proxy_users | map(attribute='proxy_username') | unique | sort -%}
             {%- set __matching_log_lines = __iptv_log | select('search', '/' ~ u) -%}
             {%- set __ip_list = __matching_log_lines | map('split', ' ') | map('first') | list | unique -%}
+            {%- set __provider = __proxy_users | selectattr('proxy_username', '==', u) | map(attribute='provider_name') | first -%}
             {%- set item_dict = {
                 'user': u,
-                'ip_list': __ip_list
+                'ip_list': __ip_list,
+                'provider': __provider
                 }
             -%}
             {%- set _ = __unique_user_ips.append(item_dict) -%}
