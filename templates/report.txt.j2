@@ -11,7 +11,7 @@ User Usage Summary
 
 {% for user in __unique_user_ips %}
 --------------------------
-checking {{ user.user }}
+{{ user.user }} on {{ user.provider }}
 ---------------------------
 {% for ip in user.ip_list | unique %}
 
