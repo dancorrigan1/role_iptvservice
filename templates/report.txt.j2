@@ -13,9 +13,9 @@ User Usage Summary
 --------------------------
 {{ user.user }} on {{ user.provider }}
 ---------------------------
+{% if user.ip_list | length > 0 %}
 {% for ip in user.ip_list | unique %}
-
-{% if __ip_added_existing | selectattr('user', '==', user.user) | selectattr('ip', '==', ip) | map(attribute='new') | first == 'true' or __ip_added_new | selectattr('user', '==', user.user) | selectattr('ip', '==', ip) | map(attribute='new') | first == 'true' %}New IP:{% else %}IP:{% endif %} {% if role_iptvservice__known_ips[ip] is defined %}{{ role_iptvservice__known_ips[ip]['name'] }} / {% endif %}{{ ip }}{% if __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first | length > 0 and __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first != 'NXDOMAIN' %} / {{ __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first }}
+{% if __ip_status | selectattr('user', '==', user.user) | selectattr('ip', '==', ip) | map(attribute='new') | first == 'true' %}New IP:{% else %}IP:{% endif %} {% if role_iptvservice__known_ips[ip] is defined %}{{ role_iptvservice__known_ips[ip]['name'] }} / {% endif %}{{ ip }}{% if __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first | length > 0 and __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first != 'NXDOMAIN' %} / {{ __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first }}
 {% else %} / No Reverse DNS
 {% endif %}
 IP Org: {{ __ip_info | selectattr('ip', '==', ip) | map(attribute='org') | first }}
@@ -27,4 +27,9 @@ User Agent(s):
 {% endfor %}
 {% endfor %}
 
+{% else %}
+No connections for user.
+
+{% endif %}
 {% endfor %}
+
