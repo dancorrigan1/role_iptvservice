@@ -158,11 +158,15 @@
         label: >-
           Adding '{{ item.1 }}' to IP user file for '{{ item.0.user }}'
 
-    - name: "Check which subelements caused changes"
+    - name: Debug
       ansible.builtin.debug:
-        msg: >
-          "For user {{ item.0.user }}, adding IP {{ item.1 }}: {{ 'changed' if item.2.changed else 'unchanged' }}"
-      loop: "{{ __unique_user_ips | subelements('ip_list') | zip(__add_ip.results) | map('list') | list }}"
+        var: __unique_user_ips | subelements('ip_list') | zip(__add_ip.results)
+
+    # - name: "Check which subelements caused changes"
+    #   ansible.builtin.debug:
+    #     msg: >
+    #       "For user {{ item.0.user }}, adding IP {{ item.1 }}: {{ 'changed' if item.2.changed else 'unchanged' }}"
+    #   loop: "{{ __unique_user_ips | subelements('ip_list') | zip(__add_ip.results) | map('list') | list }}"
 
 
     # - debug:
