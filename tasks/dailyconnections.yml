@@ -158,8 +158,14 @@
         label: >-
           Adding '{{ item.1 }}' to IP user file for '{{ item.0.user }}'
 
-    - debug:
-        var: __add_ip
+    - name: "Check which subelements caused changes"
+      ansible.builtin.debug:
+        msg: >
+          "For user {{ item.0.user }}, adding IP {{ item.1 }}: {{ 'changed' if item.2.changed else 'unchanged' }}"
+      loop: "{{ __add_ip.results | zip(__unique_user_ips | subelements('ip_list')) }}"
+
+    # - debug:
+    #     var: __add_ip
     - meta: end_play
     # - name: "Daily Connections | Include User IPs task file"
     #   ansible.builtin.include_tasks:
