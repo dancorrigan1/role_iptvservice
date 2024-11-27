@@ -165,7 +165,7 @@
     - name: "Check which subelements caused changes"
       ansible.builtin.debug:
         msg: >-
-          "item.0: {{ item.0 }} item.1: {{ item.1 }} item.2: {{ item.2 }}"
+          "item.0: {{ item.0 }} item.1: {{ item.1 }}"
       loop: "{{ __unique_user_ips | subelements('ip_list') | zip(__add_ip.results) }}"
 
 
