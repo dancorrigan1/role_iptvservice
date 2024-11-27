@@ -158,6 +158,8 @@
         label: >-
           Adding '{{ item.1 }}' to IP user file for '{{ item.0.user }}'
 
+    - debug:
+        var: __add_ip
     - meta: end_play
     # - name: "Daily Connections | Include User IPs task file"
     #   ansible.builtin.include_tasks:
