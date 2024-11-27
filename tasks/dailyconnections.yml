@@ -162,11 +162,11 @@
       ansible.builtin.debug:
         var: __unique_user_ips | subelements('ip_list') | zip(__add_ip.results)
 
-    # - name: "Check which subelements caused changes"
-    #   ansible.builtin.debug:
-    #     msg: >
-    #       "For user {{ item.0.user }}, adding IP {{ item.1 }}: {{ 'changed' if item.2.changed else 'unchanged' }}"
-    #   loop: "{{ __unique_user_ips | subelements('ip_list') | zip(__add_ip.results) | map('list') | list }}"
+    - name: "Check which subelements caused changes"
+      ansible.builtin.debug:
+        msg: >-
+          "item.0: {{ item.0 }} item.1: {{ item.1 }} item.2: {{ item.2 }}"
+      loop: "{{ __unique_user_ips | subelements('ip_list') | zip(__add_ip.results) }}"
 
 
     # - debug:
