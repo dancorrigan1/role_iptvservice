@@ -1,16 +1,16 @@
 ---
-- name: "Daily Connections | Check if Previous Day Log Exists"
+- name: "Daily Connections | Check if previous day log exists"
   ansible.builtin.stat:
     path: "{{ role_iptvservice__nginx_log_prev_day }}"
   register: __previous_day_log_stat
 
-- name: "Daily Connections | Assert that Previous Day Log Exists"
+- name: "Daily Connections | Assert that previous day log exists"
   ansible.builtin.assert:
     that: __previous_day_log_stat.stat.exists | bool
     msg: "Previous Day Log file {{ role_iptvservice__nginx_log_prev_day }} must exist to run a report."
   when: not __previous_day_log_stat.stat.exists | bool
 
-- name: "Daily Connections | Previous Day Log Exists"
+- name: "Daily Connections | Previous day log exists"
   when: __previous_day_log_stat.stat.exists | bool
   block:
     - name: "Daily Connections | Gather minimal facts"
@@ -53,7 +53,7 @@
           {{ __full_log.splitlines() | select('search', '(/player_api.php|/xmltv.php|/live)') | select('search', role_iptvservice__firewall_local_ip) }}
       no_log: true
 
-    - name: "Daily Connections | Unique Connected IPs"
+    - name: "Daily Connections | Unique connected IPs"
       ansible.builtin.set_fact:
         __unique_log_lines: >-
           {%- set unique_ips = [] -%}
@@ -68,7 +68,7 @@
           {{ unique_lines }}
       no_log: true
 
-    - name: "Daily Connections | Unique Used Upstream ports"
+    - name: "Daily Connections | Unique used upstream ports"
       ansible.builtin.set_fact:
         __used_ports: "{{ __unique_log_lines | map('regex_search', role_iptvservice__firewall_local_ip + ':[0-9]{5}')
           | map('regex_search', '[0-9]{5}$') | community.general.counter }}"
@@ -139,16 +139,16 @@
           {%- endfor -%}
           {{ __unique_user_ips }}
 
-    - name: "User IPs | Ensure user_ips directory exists"
+    - name: "Daily Connections | Ensure user_ips directory exists"
       ansible.builtin.file:
         path: "{{ role_iptvservice__iptv_logs_path }}/user_ips"
         state: directory
         mode: '0750'
 
-    - name: "User IPs | Add IPs to user IP file"
+    - name: "Daily Connections | Add IPs to user IP file"
       ansible.builtin.lineinfile:
         path: '{{ role_iptvservice__iptv_logs_path }}/user_ips/{{ item.0.user }}'
-        line: '{{ item.1  }}'
+        line: '{{ item.1 }}'
         state: present
         create: true
         mode: '0644'
@@ -156,28 +156,27 @@
       loop: "{{ __unique_user_ips | subelements('ip_list') }}"
       loop_control:
         label: >-
-          Adding '{{ item.1 }}' to IP user file for '{{ item.0.user }}'
+          Checking User: '{{ item.0.user }}' for IP: '{{ item.1 }}'
 
-    - name: Debug
-      ansible.builtin.debug:
-        var: __unique_user_ips | subelements('ip_list') | zip(__add_ip.results)
+    - name: "Daily Connections | Create list of user IP status"
+      ansible.builtin.set_fact:
+        __ip_status: >-
+          {%- set __ip_status = [] -%}
+          {%- set user = 'user' -%}
+          {%- set ip = 'ip' -%}
+          {%- set new = 'new' -%}
+          {%- for item in __unique_user_ips | subelements('ip_list') | zip(__add_ip.results) -%}
+            {%- set __new = 'true' if item.1.changed | bool else 'false' -%}
+            {%- set item_dict = {
+              user: (item.0 | first).user,
+              ip: item.0 | last,
+              new: __new}
+            -%}
+          {%- set _ = __ip_status.append(item_dict) -%}
+          {%- endfor -%}
+          {{ __ip_status }}
 
-    - name: "Check which subelements caused changes"
-      ansible.builtin.debug:
-        msg: >-
-          "item.0: {{ item.0 }} item.1: {{ item.1 }}"
-      loop: "{{ __unique_user_ips | subelements('ip_list') | zip(__add_ip.results) }}"
-
-
-    # - debug:
-    #     var: __add_ip
-    - meta: end_play
-    # - name: "Daily Connections | Include User IPs task file"
-    #   ansible.builtin.include_tasks:
-    #     file: userips.yml
-    #   loop: '{{ __unique_user_ips }}'
-
-    - name: "Daily Connections | Create list of IP Info"
+    - name: "Daily Connections | Create list of IP info"
       ansible.builtin.set_fact:
         __ip_info: >-
           {%- set __ip_info = [] -%}
@@ -202,25 +201,25 @@
           {%- endfor -%}
           {{ __ip_info }}
 
-    - name: "Daily Connections | Ensure Reports directory exists"
+    - name: "Daily Connections | Ensure reports directory exists"
       ansible.builtin.file:
         path: '{{ role_iptvservice__report_path }}'
         state: directory
         mode: '0750'
 
-    - name: "Daily Connections | Template Report"
+    - name: "Daily Connections | Template report"
       ansible.builtin.template:
         src: report.txt.j2
         dest: "{{ role_iptvservice__report_path }}/{{ ansible_date_time.date }}-iptv-monitor.txt"
         mode: '0600'
       become: true
 
-    - name: "Daily Connections | Slurp Report"
+    - name: "Daily Connections | Slurp report"
       ansible.builtin.slurp:
         src: "{{ role_iptvservice__report_path }}/{{ ansible_date_time.date }}-iptv-monitor.txt"
       register: __encoded_report
 
-    - name: "Daily Connections | Decode Report"
+    - name: "Daily Connections | Decode report"
       ansible.builtin.set_fact:
         __report: "{{ __encoded_report['content'] | b64decode }}"
 
@@ -235,7 +234,7 @@
         body: "{{ __report }}"
       become: true
   rescue:
-    - name: "Daily Connections | Fail Playbook"
+    - name: "Daily Connections | Fail playbook"
       ansible.builtin.fail:
         msg: "Something went wrong with the report."
 ...
