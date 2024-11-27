@@ -139,10 +139,30 @@
           {%- endfor -%}
           {{ __unique_user_ips }}
 
-    - name: "Daily Connections | Include User IPs task file"
-      ansible.builtin.include_tasks:
-        file: userips.yml
-      loop: '{{ __unique_user_ips }}'
+    - name: "User IPs | Ensure user_ips directory exists"
+      ansible.builtin.file:
+        path: "{{ role_iptvservice__iptv_logs_path }}/user_ips"
+        state: directory
+        mode: '0750'
+
+    - name: "User IPs | Add IPs to user IP file"
+      ansible.builtin.lineinfile:
+        path: '{{ role_iptvservice__iptv_logs_path }}/user_ips/{{ item.user }}'
+        line: '{{ item.1  }}'
+        state: present
+        create: true
+        mode: '0644'
+      register: __add_ip
+      loop: "{{ __unique_user_ips | subelements('ip_list') }}"
+      loop_control:
+        label: >-
+          Adding '{{ item.1 }}' to IP user file for '{{ item.0.user }}'
+
+    - meta: end_play
+    # - name: "Daily Connections | Include User IPs task file"
+    #   ansible.builtin.include_tasks:
+    #     file: userips.yml
+    #   loop: '{{ __unique_user_ips }}'
 
     - name: "Daily Connections | Create list of IP Info"
       ansible.builtin.set_fact:
