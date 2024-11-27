@@ -147,7 +147,7 @@
 
     - name: "User IPs | Add IPs to user IP file"
       ansible.builtin.lineinfile:
-        path: '{{ role_iptvservice__iptv_logs_path }}/user_ips/{{ item.user }}'
+        path: '{{ role_iptvservice__iptv_logs_path }}/user_ips/{{ item.0.user }}'
         line: '{{ item.1  }}'
         state: present
         create: true
