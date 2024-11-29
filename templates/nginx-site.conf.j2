@@ -1,19 +1,20 @@
 # {{ ansible_managed | comment }}
 
-{% for provider in role_iptvservice__credentials  %}
-
-# upstreams for {{ provider.name }}
-
-{% for user in provider.proxy_users %}
-# upstream for {{ user.name }}
-upstream iptv_{{ user.username }} {
+{% for item in __proxy_users | map(attribute='proxy_username') | unique | sort %}
+{% set username = item %}
+{% set name = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='proxy_name') | unique | first %}
+{% set upstream_ports = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='proxy_port') %}
+{% set provider =  __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='provider_name') | first %}
+# upstream for {{ name }} on {{ provider }}
+upstream iptv_{{ username }} {
    ip_hash;
-{% for upstream in __proxy_users | shuffle | selectattr('proxy_username', 'equalto', user.username) %}
-   server {{ role_iptvservice__iptv_hostname | first }}:{{ upstream.proxy_port }}; # {{ upstream.xtream_account }} - {{ upstream.xtream_user }}
+{% for port in upstream_ports | shuffle %}
+{% set iptv_account = __proxy_users | selectattr('proxy_port', '==', port) | map(attribute='xtream_account') | first %}
+{% set provider_username = role_iptvservice__credentials | map(attribute='provider_credentials') | flatten | selectattr('account', '==', iptv_account) | map(attribute='username') | first %}
+   server {{ role_iptvservice__iptv_hostname | first }}:{{ port }}; # {{ iptv_account }} - {{ provider_username }}
 {% endfor %}
 }
 
-{% endfor %}
 {% endfor %}
 
 # log_format
@@ -32,25 +33,35 @@ server {
    index index.html index.php;
    root /var/www/html/{{ role_iptvservice__iptv_hostname | first }};
 
-{% for provider in role_iptvservice__credentials  %}
-
-   # proxies for {{ provider.name }}
-
-{% for user in provider.proxy_users %}
-   # Proxy for {{ user.name }}
-   location ^~ /{{ user.username }}/ {
+{% for item in __proxy_users | map(attribute='proxy_username') | unique | sort %}
+{% set username = item %}
+{% set name = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='proxy_name') | unique | first %}
+{% set live = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='live') | first %}
+{% set vod = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='vod') | first %}
+   # Proxy for {{ name }}
+   location ^~ /{{ username }}/ {
       if ($iptv_agents = 0) {
         return 403;
       }
-      proxy_pass http://iptv_{{ user.username }}/;
+{% if not live | bool %}
+      # block live
+      if ($arg_action ~* ^(get_live)$) {
+        return 403;
+      }
+{% endif %}
+{% if not vod | bool %}
+      # block vod
+      if ($arg_action ~* ^(get_vod)$) {
+        return 403;
+      }
+{% endif %}
+      proxy_pass http://iptv_{{ username }}/;
       proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      #proxy_set_header X-Forwarded-Proto $scheme;
       keepalive_timeout 60s;
    }
 
-{% endfor %}
 {% endfor %}
 
     # root
@@ -82,24 +93,36 @@ server {
    index index.html index.php;
    root /var/www/html/{{ role_iptvservice__iptv_hostname | first }};
    include /etc/nginx/snippets/letsencrypt.conf;
-{% for provider in role_iptvservice__credentials  %}
 
-   # proxies for {{ provider.name }}
-
-{% for user in provider.proxy_users %}
-   # Proxy for {{ user.name }}
-   location ^~ /{{ user.username }}/ {
+{% for item in __proxy_users | map(attribute='proxy_username') | unique | sort %}
+{% set username = item %}
+{% set name = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='proxy_name') | unique | first %}
+{% set live = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='live') | first %}
+{% set vod = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='vod') | first %}
+   # Proxy for {{ name }}
+   location ^~ /{{ username }}/ {
       if ($iptv_agents = 0) {
         return 403;
       }
-      proxy_pass http://iptv_{{ user.username }}/;
+{% if not live | bool %}
+      # block live
+      if ($arg_action ~* ^(get_live)$) {
+        return 403;
+      }
+{% endif %}
+{% if not  vod | bool %}
+      # block vod
+      if ($arg_action ~* ^(get_vod)$) {
+        return 403;
+      }
+{% endif %}
+      proxy_pass http://iptv_{{ username }}/;
       proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       keepalive_timeout 60s;
    }
 
-{% endfor %}
 {% endfor %}
 
    # root
@@ -110,9 +133,10 @@ server {
    # PHP
    location ~ \.php$ {
       try_files $uri =404;
-      fastcgi_pass unix:/var/run/php/php-fpm.sock;
+      fastcgi_pass unix:/var/run/php/php7.4-fpm.sock;
       fastcgi_index index.php;
       fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+      include fastcgi_params;
    }
 
    # SSL

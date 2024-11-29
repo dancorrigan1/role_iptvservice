@@ -17,7 +17,9 @@
               'proxy_port': role_iptvservice__proxy_start_port + ns.port_count,
               'xtream_account': provider_credential.account,
               'xtream_user': provider_credential.username,
-              'xtream_pass': provider_credential.password
+              'xtream_pass': provider_credential.password,
+              'live': proxy_user.live | default('true'),
+              'vod': proxy_user.vod | default('true')
             } -%}
             {%- set _ = __proxy_users.append(users_dict) -%}
           {%- endfor -%}
@@ -27,6 +29,14 @@
   tags:
     - always
   no_log: true
+
+# - debug:
+#     var: __proxy_users
+#   tags:
+#     - always
+# - meta: end_play
+#   tags:
+#     - always
 
 - name: "Main | Include nginx task file"
   ansible.builtin.include_tasks:
