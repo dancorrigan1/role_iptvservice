@@ -95,8 +95,8 @@ role_iptvservice__credentials:
   - name: "iptv service 2"
     url: "http://otheriptv.com"
     proxy_users:
-      - { name: "My Friend 1", username: "friend6", password: "somepassword" }
-      - { name: "My Friend 2", username: "friend7", password: "somepassword" }
+      - { name: "My Friend 1", username: "friend6", password: "somepassword", live: false }
+      - { name: "My Friend 2", username: "friend7", password: "somepassword", vod: false }
       - { name: "My Friend 3", username: "friend8", password: "somepassword" }
       - { name: "My Friend 4", username: "friend9", password: "somepassword" }
       - { name: "My Friend 5", username: "friend10", password: "somepassword" }
