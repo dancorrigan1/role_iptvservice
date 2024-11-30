@@ -30,14 +30,6 @@
     - always
   no_log: true
 
-# - debug:
-#     var: __proxy_users
-#   tags:
-#     - always
-# - meta: end_play
-#   tags:
-#     - always
-
 - name: "Main | Include nginx task file"
   ansible.builtin.include_tasks:
     file: nginx.yml
