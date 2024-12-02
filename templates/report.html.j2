@@ -1,0 +1,42 @@
+<table cellspacing="5" cellpadding="5" border="1">
+<tr><th colspan=6>Provider Account Summary</th></tr>
+<tr><th>Provider Account</th><th>Unique Logins</th></tr>
+{% for account, value in __sorted_total_collections %}
+<tr><td>{{ account }}</td><td>{{ value }}</td></tr>
+{% endfor %}
+</table>
+<br>
+<br>
+<table cellspacing="5" cellpadding="5" border="1">
+<tr><th colspan=6>Proxy User Summary</th></tr>
+<tr><th>Real Name</th><th>User Name</th><th>Provider</th><th>IP Address Info</th><th>User Agents</th></tr>
+{% for user in __unique_user_ips %}
+  {% set agent_list = __iptv_log | select('search', '/' ~ user.user) | map('split', '\"') | flatten | select('search', role_iptvservice__allowed_user_agents | join('|')) | unique %}
+  <tr>
+    <td valign="top">{{ role_iptvservice__credentials | map(attribute='proxy_users') | flatten | selectattr('username', '==', user.user) | map(attribute='name') | first }}</td>
+    <td valign="top">{{ user.user }}</td>
+    <td valign="top">{{ user.provider }}</td>
+    {% if user.ip_list | length < 1 %}
+      <td>N/A</td><td>N/A</td>
+    {% else %}
+      <td valign="top">
+        {%- for ip in user.ip_list | unique -%}
+          {% if role_iptvservice__known_ips[ip] is defined %}{{ role_iptvservice__known_ips[ip]['name'] }} | {{ ip }} |{% else %}{{ ip }} |{% endif %}
+          {% if __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first | length > 0 and __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first != 'NXDOMAIN' %}
+            {{ __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first }}
+          {% else %}
+            No Reverse DNS
+          {% endif %}
+           | {{ __ip_info | selectattr('ip', '==', ip) | map(attribute='org') | first }}
+          {% if loop.index < (user.ip_list | length) %}<br>{% endif %}
+        {% endfor %}
+      </td>
+      <td valign="top">
+          {% for agent in agent_list %}
+            {{ agent }}
+            {% if loop.index < (agent_list | unique | length) %}<br>{% endif %}
+          {% endfor %}
+      </td>
+    {% endif %}
+  </tr>
+{% endfor %}

@@ -207,16 +207,23 @@
         state: directory
         mode: '0750'
 
-    - name: "Daily Connections | Template report"
+    - name: "Daily Connections | Template txt report"
       ansible.builtin.template:
         src: report.txt.j2
         dest: "{{ role_iptvservice__report_path }}/{{ ansible_date_time.date }}-iptv-monitor.txt"
         mode: '0600'
       become: true
 
+    - name: "Daily Connections | Template html report"
+      ansible.builtin.template:
+        src: report.html.j2
+        dest: "{{ role_iptvservice__report_path }}/{{ ansible_date_time.date }}-iptv-monitor.html"
+        mode: '0600'
+      become: true
+
     - name: "Daily Connections | Slurp report"
       ansible.builtin.slurp:
-        src: "{{ role_iptvservice__report_path }}/{{ ansible_date_time.date }}-iptv-monitor.txt"
+        src: "{{ role_iptvservice__report_path }}/{{ ansible_date_time.date }}-iptv-monitor.html"
       register: __encoded_report
 
     - name: "Daily Connections | Decode report"
@@ -232,6 +239,7 @@
         port: 25
         secure: never
         body: "{{ __report }}"
+        subtype: html
       become: true
   rescue:
     - name: "Daily Connections | Fail playbook"
