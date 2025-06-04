@@ -1,4 +1,13 @@
 ---
+- name: "IPTV Proxy | Template nginx.conf"
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    mode: '0640'
+    owner: root
+    group: root
+  notify: Reload nginx
+
 - name: "IPTV Proxy | Add http user agents map block to nginx.conf"
   ansible.builtin.blockinfile:
     path: /etc/nginx/nginx.conf
