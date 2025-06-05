@@ -64,7 +64,7 @@ location / {
 server {
    listen 443 ssl;
    server_name {{ role_iptvservice__iptv_hostname | join(' ') }};
-   access_log /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_access.log main_ext;
+   access_log /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_access.log main_ext2;
    error_log /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_error.log;
    index index.html index.php;
    root /var/www/html/{{ role_iptvservice__iptv_hostname | first }};
