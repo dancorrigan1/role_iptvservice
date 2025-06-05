@@ -11,8 +11,8 @@ http {
 
     # Map usernames to upstreams
     map $arg_username $backend {
+default         backend_default;
 {% for user in __proxy_users | map(attribute='proxy_username') | unique | sort %}
-        default         backend_default;
         {{ user }}      backend_{{ user }};
 {% endfor %}
     }
