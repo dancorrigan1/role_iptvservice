@@ -38,7 +38,7 @@ location / {
     proxy_set_header Host $host;
 }
 
-{% for item in __proxy_users | map(attribute='proxy_username') | unique | sort %}
+{# {% for item in __proxy_users | map(attribute='proxy_username') | unique | sort %}
 {% set username = item %}
 {% set name = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='proxy_name') | unique | first %}
 {% set live = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='live') | first %}
@@ -49,7 +49,7 @@ location / {
       proxy_pass http://backend_{{ username }};
       break;
     }
-{% endfor %}
+{% endfor %} #}
 
     # PHP
     location ~ \.php$ {
@@ -82,7 +82,7 @@ location / {
 }
 
 
-{% for item in __proxy_users | map(attribute='proxy_username') | unique | sort %}
+{# {% for item in __proxy_users | map(attribute='proxy_username') | unique | sort %}
 {% set username = item %}
 {% set name = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='proxy_name') | unique | first %}
 {% set live = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='live') | first %}
@@ -92,7 +92,7 @@ location / {
       proxy_pass http://backend_{{ username }};
       break;
     }
-{% endfor %}
+{% endfor %} #}
 
    # Protected Paths
 {% if role_iptvservice__protected_paths is defined and role_iptvservice__protected_paths | length > 0 %}
