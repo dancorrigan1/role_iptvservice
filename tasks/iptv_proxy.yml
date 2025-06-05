@@ -4,20 +4,20 @@
     __iptv_starting_port: "{{ __proxy_users | map(attribute='proxy_port') | first }}"
     __iptv_ending_port: "{{ __proxy_users | map(attribute='proxy_port') | last }}"
 
-- name: "IPTV Proxy | Refresh main firewall"
-  ansible.builtin.command:
-    cmd: "{{ role_iptvservice__firewall_command }}"
-  register: __my_firewall_output
-  changed_when: __my_firewall_output.rc == 0
-  failed_when: __my_firewall_output.rc != 0
+# - name: "IPTV Proxy | Refresh main firewall"
+#   ansible.builtin.command:
+#     cmd: "{{ role_iptvservice__firewall_command }}"
+#   register: __my_firewall_output
+#   changed_when: __my_firewall_output.rc == 0
+#   failed_when: __my_firewall_output.rc != 0
 
-- name: "IPTV Proxy | Kill all iptv-proxy processes"
-  ansible.builtin.command:
-    cmd: pkill -9 iptv-proxy
-  ignore_errors: true
-  register: __my_killall_output
-  changed_when: __my_killall_output.rc == 0
-  failed_when: __my_killall_output.rc != 0
+# - name: "IPTV Proxy | Kill all iptv-proxy processes"
+#   ansible.builtin.command:
+#     cmd: pkill -9 iptv-proxy
+#   ignore_errors: true
+#   register: __my_killall_output
+#   changed_when: __my_killall_output.rc == 0
+#   failed_when: __my_killall_output.rc != 0
 
 - name: "IPTV Proxy | Add ACCEPT rules for all iptv-proxy ports"
   ansible.builtin.iptables:
