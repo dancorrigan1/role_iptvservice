@@ -6,7 +6,7 @@
 {% set upstream_ports = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='proxy_port') %}
 {% set provider =  __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='provider_name') | first %}
 # upstream for {{ name }} on {{ provider }}
-upstream iptv_{{ username }} {
+upstream backend_{{ username }} {
    ip_hash;
 {% for port in upstream_ports | shuffle %}
 {% set iptv_account = __proxy_users | selectattr('proxy_port', '==', port) | map(attribute='xtream_account') | first %}
