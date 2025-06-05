@@ -34,8 +34,13 @@ server {
    root /var/www/html/{{ role_iptvservice__iptv_hostname | first }};
 
 location / {
-    proxy_pass http://$backend;
-    proxy_set_header Host $host;
+  proxy_pass http://$backend;
+  proxy_set_header Host $host;
+}
+
+location ~ \.php$ {
+  proxy_pass http://$backend;
+  proxy_set_header Host $host;
 }
 
 {# {% for item in __proxy_users | map(attribute='proxy_username') | unique | sort %}
@@ -77,8 +82,13 @@ server {
    include /etc/nginx/snippets/letsencrypt.conf;
 
 location / {
-    proxy_pass http://$backend;
-    proxy_set_header Host $host;
+  proxy_pass http://$backend;
+  proxy_set_header Host $host;
+}
+
+location ~ \.php$ {
+  proxy_pass http://$backend;
+  proxy_set_header Host $host;
 }
 
 
