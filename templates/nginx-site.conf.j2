@@ -113,13 +113,6 @@ server {
     }
 {% endfor %}
 
-{% endfor %}
-
-   # root
-   location / {
-      try_files $uri $uri/ =404;
-   }
-
    # Protected Paths
 {% if role_iptvservice__protected_paths is defined and role_iptvservice__protected_paths | length > 0 %}
 {% for item in role_iptvservice__protected_paths %}
@@ -129,7 +122,7 @@ server {
    {% endfor %}
    }
 {% endfor %}
-{% endif %}
+
 
    # PHP
    location ~ \.php$ {
