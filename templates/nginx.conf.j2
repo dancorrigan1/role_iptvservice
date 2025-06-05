@@ -8,14 +8,27 @@ events {
   # multi_accept on;
 }
 http {
+map $request_uri $uri_username {
+    "~^/live/([^/]+)/" $1;
+    "~^/vod/([^/]+)/" $1;
+    default "";
+}
 
-    # Map usernames to upstreams
-    map $arg_username $backend {
-default         backend_default;
+map "$arg_username|$uri_username" $effective_username {
+    "~^(.+)\|$" $1;
+    "~^\|(.+)$" $1;
+    "~^(.+)\|(.+)$" $1;
+    default "";
+}
+
+map $effective_username $backend {
+    default backend_default;
 {% for user in __proxy_users | map(attribute='proxy_username') | unique | sort %}
-        {{ user }}      backend_{{ user }};
+    {{ user }} backend_{{ user }};
 {% endfor %}
-    }
+}
+
+
 
   # Increase the maximum size of the hash table
   proxy_headers_hash_max_size 1024;

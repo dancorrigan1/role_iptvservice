@@ -33,20 +33,10 @@ server {
    index index.html index.php;
    root /var/www/html/{{ role_iptvservice__iptv_hostname | first }};
 
-  location / {
-    set $effective_username "";
-
-    if ($request_uri ~ ^/live/([^/]+)/) {
-      set $effective_username $1;
-    }
-
-    if ($request_uri ~ ^/vod/([^/]+)/) {
-      set $effective_username $1;
-    }
-
-    if ($arg_username != "") {
-      set $effective_username $arg_username;
-    }
+location / {
+    proxy_pass http://$backend;
+    proxy_set_header Host $host;
+}
 
 {% for item in __proxy_users | map(attribute='proxy_username') | unique | sort %}
 {% set username = item %}
@@ -86,20 +76,11 @@ server {
    root /var/www/html/{{ role_iptvservice__iptv_hostname | first }};
    include /etc/nginx/snippets/letsencrypt.conf;
 
-  location / {
-    set $effective_username "";
+location / {
+    proxy_pass http://$backend;
+    proxy_set_header Host $host;
+}
 
-    if ($request_uri ~ ^/live/([^/]+)/) {
-      set $effective_username $1;
-    }
-
-    if ($request_uri ~ ^/vod/([^/]+)/) {
-      set $effective_username $1;
-    }
-
-    if ($arg_username != "") {
-      set $effective_username $arg_username;
-    }
 
 {% for item in __proxy_users | map(attribute='proxy_username') | unique | sort %}
 {% set username = item %}
