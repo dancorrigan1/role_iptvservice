@@ -43,6 +43,7 @@ server {
     if ($request_uri ~ ^/vod/([^/]+)/) {
       set $effective_username $1;
     }
+
     if ($arg_username != "") {
       set $effective_username $arg_username;
     }
@@ -85,37 +86,32 @@ server {
    root /var/www/html/{{ role_iptvservice__iptv_hostname | first }};
    include /etc/nginx/snippets/letsencrypt.conf;
 
+  location / {
+    set $effective_username "";
+
+    if ($request_uri ~ ^/live/([^/]+)/) {
+      set $effective_username $1;
+    }
+
+    if ($request_uri ~ ^/vod/([^/]+)/) {
+      set $effective_username $1;
+    }
+
+    if ($arg_username != "") {
+      set $effective_username $arg_username;
+    }
+
 {% for item in __proxy_users | map(attribute='proxy_username') | unique | sort %}
 {% set username = item %}
 {% set name = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='proxy_name') | unique | first %}
 {% set live = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='live') | first %}
 {% set vod = __proxy_users | selectattr('proxy_username', '==', username) | map(attribute='vod') | first %}
-   # Proxy for {{ name }}
-   location ^~ /{{ username }}/ {
-      if ($iptv_agents = 0) {
-        return 403;
-      }
-{% if not live | bool %}
-      # block live
-      if ($arg_action ~* ^(get_live_categories|get_live_streams)$) {
-        return 403;
-      }
-      if ($uri ~* /live) {
-        return 403;
-      }
-{% endif %}
-{% if not vod | bool %}
-      # block vod
-      if ($arg_action ~* ^(get_vod_categories|get_vod_streams|get_vod_info)$) {
-        return 403;
-      }
-{% endif %}
-      proxy_pass http://iptv_{{ username }}/;
-      proxy_set_header Host $host;
-      proxy_set_header X-Real-IP $remote_addr;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      keepalive_timeout 60s;
-   }
+    # Proxy for {{ name }}
+    if ($effective_username = {{ name }}) {
+      proxy_pass http://backend_{{ name }};
+      break;
+    }
+{% endfor %}
 
 {% endfor %}
 
