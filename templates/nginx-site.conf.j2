@@ -34,6 +34,22 @@ server {
    root /var/www/html/{{ role_iptvservice__iptv_hostname | first }};
 
 location / {
+   # Block Live
+   if ($live_enabled = 0) {
+        if ($arg_action ~* ^(get_live_categories|get_live_streams)$) {
+            return 403;
+        }
+        if ($uri ~* /live) {
+            return 403;
+        }
+    }
+
+    # Block VOD
+    if ($vod_enabled = 0) {
+        if ($arg_action ~* ^(get_vod_categories|get_vod_streams|get_vod_info)$) {
+            return 403;
+        }
+    }
   proxy_pass http://$backend;
   proxy_set_header Host $host;
   proxy_set_header X-Real-IP $remote_addr;
@@ -71,6 +87,23 @@ server {
    include /etc/nginx/snippets/letsencrypt.conf;
 
 location / {
+   # Block Live
+   if ($live_enabled = 0) {
+        if ($arg_action ~* ^(get_live_categories|get_live_streams)$) {
+            return 403;
+        }
+        if ($uri ~* /live) {
+            return 403;
+        }
+    }
+
+    # Block VOD
+    if ($vod_enabled = 0) {
+        if ($arg_action ~* ^(get_vod_categories|get_vod_streams|get_vod_info)$) {
+            return 403;
+        }
+    }
+
   proxy_pass http://$backend;
   proxy_set_header Host $host;
   proxy_set_header X-Real-IP $remote_addr;
