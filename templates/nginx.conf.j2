@@ -28,6 +28,17 @@ map $effective_username $backend {
 {% endfor %}
 }
 
+map "$live_enabled|$arg_action|$uri" $block_live {
+    "~^0\|get_live_(categories|streams)\|.*$" 1;
+    "~^0\|.*\|/live"                         1;
+    default                                  0;
+}
+
+map "$vod_enabled|$arg_action" $block_vod {
+    "~^0\|get_vod_(categories|streams|info)$" 1;
+    default                                   0;
+}
+
 map $effective_username $live_enabled {
   default 0;
   {% for user in __proxy_users | map(attribute='proxy_username') | unique | sort %}
