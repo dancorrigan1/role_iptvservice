@@ -41,6 +41,7 @@ map $effective_username $vod_enabled {
     {% for user in __proxy_users | map(attribute='proxy_username') | unique | sort %}
 {% set vod = __proxy_users | selectattr('proxy_username', '==', user) | map(attribute='vod') | first %}
   {{ user }} {{ vod | ternary(1, 0) }};
+{% endfor %}
 }
 
   # Increase the maximum size of the hash table
