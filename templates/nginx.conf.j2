@@ -44,7 +44,7 @@ map $effective_username $live_enabled {
   default 0;
   {% for user in __proxy_users | map(attribute='proxy_username') | unique | sort %}
 {% set live = __proxy_users | selectattr('proxy_username', '==', user) | map(attribute='live') | first %}
-  {{ user }} {{ live }};
+   {{ user }} {{ 1 if live else 0 }};
 {% endfor %}
 }
 
@@ -52,7 +52,7 @@ map $effective_username $vod_enabled {
     default 0;
     {% for user in __proxy_users | map(attribute='proxy_username') | unique | sort %}
 {% set vod = __proxy_users | selectattr('proxy_username', '==', user) | map(attribute='vod') | first %}
-  {{ user }} {{ vod }};
+   {{ user }} {{ 1 if vod else 0 }};
 {% endfor %}
 }
 
