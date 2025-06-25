@@ -29,8 +29,8 @@
     path: /var/www/letsencrypt
     state: directory
     mode: '0750'
-    owner: root
-    group: root
+    owner: www-data
+    group: www-data
   notify: Reload nginx
 
 - name: "IPTV Proxy | Copy nginx template"
