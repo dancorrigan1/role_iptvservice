@@ -1,10 +1,4 @@
 ---
-- name: Debug
-  ansible.builtin.debug:
-    var: role_iptvservice__credentials
-  tags:
-    - always
-
 - name: "Main | Build dictionary of proxy users"
   ansible.builtin.set_fact:
     __proxy_users: >-
@@ -34,7 +28,7 @@
       {{ __proxy_users }}
   tags:
     - always
-  no_log: false
+  no_log: true
 
 - name: "Main | Include nginx task file"
   ansible.builtin.include_tasks:
