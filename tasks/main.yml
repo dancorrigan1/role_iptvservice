@@ -28,7 +28,7 @@
       {{ __proxy_users }}
   tags:
     - always
-  no_log: true
+  no_log: false
 
 - name: "Main | Include nginx task file"
   ansible.builtin.include_tasks:
