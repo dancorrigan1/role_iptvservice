@@ -1,4 +1,10 @@
 ---
+- name: Debug
+  ansible.builtin.debug:
+    msg: "role_iptvservice__credentials: {{ role_iptvservice__credentials | to_nice_json }}"
+  tags:
+    - always
+
 - name: "Main | Build dictionary of proxy users"
   ansible.builtin.set_fact:
     __proxy_users: >-
