@@ -1,7 +1,7 @@
 ---
 - name: Debug
   ansible.builtin.debug:
-    msg: "role_iptvservice__credentials: {{ role_iptvservice__credentials | to_nice_json }}"
+    var: role_iptvservice__credentials
   tags:
     - always
 
