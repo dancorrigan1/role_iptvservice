@@ -11,7 +11,7 @@
       {%- set ns = namespace(port_count=0) -%}
       {%- set __proxy_users = [] -%}
       {%- for proxy in role_iptvservice__credentials -%}
-        {%- for proxy_user in proxy.proxy_users -%}
+        {%- for proxy_user in proxy.proxy_users | default([]) -%}
           {%- for provider_credential in proxy.provider_credentials -%}
             {%- set ns.port_count = ns.port_count + 1 -%}
             {%- set users_dict = {
