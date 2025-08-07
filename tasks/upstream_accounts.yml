@@ -15,7 +15,7 @@
 
 - name: debug
   debug:
-    msg: "Upstream test results: {{ item.user_info }}"
+    msg: "Upstream test results: {{ item.json }}"
   loop: '{{ __upstream_test_results.results }}'
 
 # - name: Report any failed upstream account connections
