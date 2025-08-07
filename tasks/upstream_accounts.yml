@@ -11,7 +11,7 @@
 
 - name: Test Connect to Each Upstream Account with URI module
   ansible.builtin.uri:
-    url: {{ item.0.url }}/player_api.php?username={{ item.1.username }}&password={{ item.1.password }}&action=get_live_streams
+    url: "{{ item.0.url }}/player_api.php?username={{ item.1.username }}&password={{ item.1.password }}&action=get_live_streams"
     method: GET
     status_code: 200
   loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
