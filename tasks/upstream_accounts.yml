@@ -12,11 +12,20 @@
   ignore_errors: true
   no_log: false
 
+- name: Identify failed upstream results
+  ansible.builtin.set_fact:
+    __failed_upstreams: >-
+      {{ __upstream_test_results.results
+         | selectattr('json.user_info.auth', 'defined')
+         | selectattr('json.user_info.auth', 'ne', 1)
+         | list
+         + (__upstream_test_results.results | selectattr('status', 'equalto', 512) | list) }}
+
 - name: Report any failed upstream account connections
   ansible.builtin.debug:
     msg: "Failed to connect to upstream account {{ item.item.1.account }} at {{ item.item.0.url }} with username {{ item.item.1.username }}"
   when: (item.json is defined and item.json.user_info.auth != 1) or item.status == '512'
-  loop: "{{ __upstream_test_results.results }}"
+  loop: "{{ __failed_upstreams }}"
   loop_control:
     label: >-
       Displaying {{ item.item.1.account }}:{{ item.item.1.username }} at {{ item.item.0.url }}
@@ -24,20 +33,20 @@
 - name: "Remove Upstreams for Overloaded Accounts"
   ansible.builtin.replace:
     path: "{{ role_iptvservice__nginx_conf }}"
-    regexp: '^(\s+server.*{{ item.item.1.account }}.*)$'
+    regexp: '^(.*server.*{{ item.item.1.account }}.*)$'
     replace: '# \1'
-  loop: "{{ __upstream_test_results.results }}"
+  loop: "{{ __failed_upstreams }}"
   loop_control:
     label: >-
       Removing upstream for Account '{{ item.item.1.account }}' from NGINX Config
-  when: (item.json is defined and item.json.user_info.auth != 1) or item.status == '512'
+  when: (item.json is defined and item.json.user_info is defined and item.json.user_info.auth != 1) or item.status | string == '512'
 
 - name: "Number Connections | Get pids of iptv-proxy processes of overloaded accounts"
   community.general.pids:
     pattern: "--xtream-user {{ item.item.1.username }}"
   become: true
-  loop: "{{ __upstream_test_results.results }}"
-  when: (item.json is defined and item.json.user_info.auth != 1) or item.status == '512'
+  loop: "{{ __failed_upstreams }}"
+  when: (item.json is defined and item.json.user_info is defined and item.json.user_info.auth != 1) or item.status | string == '512'
   loop_control:
     label: >-
       Getting PIDs of iptv-proxy process for Account '{{ item.item.1.account }}'
@@ -46,24 +55,19 @@
     extended_allitems: false
   register: __proxy_pids
 
-- name: Debug
-  ansible.builtin.debug:
-    msg: '{{ item }}'
+- name: "Number Connections | Kill pids of iptv-proxy processes of overloaded accounts"
+  ansible.builtin.command:
+    cmd: kill "{{ item.pids | join(' ') }}"
+  become: true
   loop: "{{ __proxy_pids.results }}"
-
-# - name: "Number Connections | Kill pids of iptv-proxy processes of overloaded accounts"
-#   ansible.builtin.command:
-#     cmd: kill "{{ item.pids | first }}"
-#   become: true
-#   loop: "{{ __proxy_pids.results }}"
-#   loop_control:
-#     label: >-
-#       Killing iptv-proxy PID {{ item.pids | first }} ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
-#     index_var: __my_idx
-#     extended: true
-#     extended_allitems: false
-#   changed_when: true
-#   when: item.pids | length > 0
+  loop_control:
+    label: >-
+      Killing iptv-proxy PID {{ item.pids | first }} ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
+    index_var: __my_idx
+    extended: true
+    extended_allitems: false
+  changed_when: true
+  when: item.pids | length > 0
 
 - name: "Number Connections | Email report of removed upstreams"
   community.general.mail:
@@ -72,7 +76,17 @@
     subject: "URGENT: Upstreams removed from IPTV Proxy"
     host: "{{ role_iptvservice__email_server }}"
     port: 25
+    subtype: html
     secure: never
-    body: "{{ __upstream_test_results.results }}"
-  when: __upstream_test_results.results | selectattr('json.user_info.auth', 'ne', 1) | list | length > 0
+    body: |-
+      The following upstream accounts were removed or failed:
+
+      {% for item in __failed_upstreams %}
+      - Account: {{ item.item.1.account }}
+        Username: {{ item.item.1.username }}
+        URL: {{ item.item.0.url }}
+        Status: {{ item.status }}
+        Auth Result: {{ item.json.user_info.auth if item.json is defined and item.json.user_info is defined else 'N/A' }}
+      {% endfor %}
+  when: __failed_upstreams | length > 0
 ...
