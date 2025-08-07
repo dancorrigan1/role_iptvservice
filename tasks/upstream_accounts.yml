@@ -1,13 +1,4 @@
 ---
-- name: Debug
-  ansible.builtin.debug:
-    msg:
-      - "{{ item.0.url }}"
-      - "{{ item.1.username }}"
-      - "{{ item.1.password }}"
-  loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
-
-
 
 - name: Test Connect to Each Upstream Account with URI module
   ansible.builtin.uri:
@@ -20,100 +11,11 @@
       Checking {{ item.1.account }}:{{ item.1.username }} at {{ item.0.url }}
   register: __upstream_test_results
   ignore_errors: true
+  no_log: false
 
 - name: Report any failed upstream account connections
   ansible.builtin.debug:
     msg: "Failed to connect to upstream account {{ item.item.1.account }} at {{ item.item.0.url }} with username {{ item.item.1.username }}"
   when: item.status != 200
   loop: "{{ __upstream_test_results.results }}"
-
-
-
-# - name: Test Connect to Each Upstream Account with URI module
-#   ansible.builtin.uri:
-#     url: "{{ item.0.url }}"
-#     method: GET
-#     url_username: "{{ item.1.username }}"
-#     url_password: "{{ item.1.password }}"
-#     status_code: 200
-#   loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
-#   loop_control:
-#     label: >-
-#       Checking {{ item.1.account }}:{{ item.1.username }} at {{ item.0.url }}
-#   register: upstream_test_results
-
-# - name: Test Connect to Each Upstream Account with URI module
-#   ansible.builtin.uri:
-#     url: "{{ item.0.url }}"
-#     method: GET
-#     username: "{{ item.1.username }}"
-#     password: "{{ item.1.password }}"
-#     status_code: 200
-#   loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
-#   register: upstream_test_results
-
-
-# - name: Upstream Account Tester
-#   ansible.builtin.set_fact:
-#     __upstream_accounts: >-
-#       {%- set __upstream_accounts = [] -%}
-#       {%- for account in role_iptvservice__credentials -%}
-#         {%- for provider_credential in role_iptvservice__credentials -%}
-#           {%- set account_dict = {
-#             'provider_url': provider_credential.provider_url,
-#             'xtream_account': provider_credential.xtream_account,
-#             'xtream_user': provider_credential.xtream_user,
-#             'xtream_pass': provider_credential.xtream_pass
-#           } -%}
-#           {%- set _ = __upstream_accounts.append(account_dict) -%}
-#         {%- endfor -%}
-#       {%- endfor -%}
-#       {{ __upstream_accounts }}
-
-# - name: Test Connect to Each Upstream Account with URI module
-#   ansible.builtin.uri:
-#     url: "{{ item.provider_url }}"
-#     method: GET
-#     username: "{{ item.xtream_user }}"
-#     password: "{{ item.xtream_pass }}"
-#     status_code: 200
-#   loop: "{{ __upstream_accounts }}"
-#   register: upstream_test_results
-
-# - name: Display Upstream Account Test Results
-#   ansible.builtin.debug:
-#     msg: "Upstream Account {{ item.item.provider_url }}: {{ item.status }}"
-#   loop: "{{ upstream_test_results.results }}"
-#   when: item.status == 200
-
-# # ---
-# - name: "Main | Build dictionary of proxy users"
-#   ansible.builtin.set_fact:
-#     __proxy_users: >-
-#       {%- set ns = namespace(port_count=0) -%}
-#       {%- set __proxy_users = [] -%}
-#       {%- for proxy in role_iptvservice__credentials -%}
-#         {%- for proxy_user in proxy.proxy_users -%}
-#           {%- for provider_credential in proxy.provider_credentials -%}
-#             {%- set ns.port_count = ns.port_count + 1 -%}
-#             {%- set users_dict = {
-#               'provider_name': proxy.name,
-#               'provider_url': proxy.url,
-#               'proxy_name': proxy_user.name,
-#               'proxy_username': proxy_user.username,
-#               'proxy_pass': proxy_user.password,
-#               'proxy_port': role_iptvservice__proxy_start_port + ns.port_count,
-#               'xtream_account': provider_credential.account,
-#               'xtream_user': provider_credential.username,
-#               'xtream_pass': provider_credential.password,
-#               'live': proxy_user.live | default('true'),
-#               'vod': proxy_user.vod | default('true')
-#             } -%}
-#             {%- set _ = __proxy_users.append(users_dict) -%}
-#           {%- endfor -%}
-#         {%- endfor -%}
-#       {%- endfor -%}
-#       {{ __proxy_users }}
-#   tags:
-#     - always
-#   no_log: true
+...
