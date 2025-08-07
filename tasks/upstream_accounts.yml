@@ -1,5 +1,4 @@
 ---
-
 - name: Test Connect to Each Upstream Account with URI module
   ansible.builtin.uri:
     url: "{{ item.0.url }}/player_api.php?username={{ item.1.username }}&password={{ item.1.password }}"
@@ -22,30 +21,51 @@
     label: >-
       Displaying {{ item.item.1.account }}:{{ item.item.1.username }} at {{ item.item.0.url }}
 
+- name: "Remove Upstreams for Overloaded Accounts"
+  ansible.builtin.replace:
+    path: "{{ role_iptvservice__nginx_conf }}"
+    regexp: '^(\s+server.*{{ item.item.1.account }}.*)$'
+    replace: '# \1'
+  loop: "{{ __upstream_test_results.results }}"
+  loop_control:
+    label: >-
+      Removing upstream for Account '{{ item.item.1.account }}' from NGINX Config
+  when: item.json.user_info.auth != 1
 
-    # "json": {
-    #         "server_info": {                                                                                                                                                                                                                                                "https_port": "443",
-    #             "port": "80",
-    #             "process": true,
-    #             "rtmp_port": "30002",
-    #             "server_protocol": "https",
-    #             "time_now": "2025-08-06 19:00:54",
-    #             "timestamp_now": 1754528454,
-    #             "timezone": "Pacific/Easter",
-    #             "url": "pinkpony.lol"
-    #         },
-    #         "user_info": {                                                                                                                                                                                                                                                  "active_cons": "1",
-    #             "allowed_output_formats": [
-    #                 "m3u8",
-    #                 "ts"
-    #             ],
-    #             "auth": 1,                                                                                                                                                                                                                                                  "created_at": "1749476847",
-    #             "exp_date": "1765284447",
-    #             "is_trial": "0",
-    #             "max_connections": "4",
-    #             "message": "Less is more..",
-    #             "password": "trixie454",                                                                                                                                                                                                                                    "status": "Active",
-    #             "username": "mikec"
-    #         }
-    #     },
+- name: "Number Connections | Get pids of iptv-proxy processes of overloaded accounts"
+  community.general.pids:
+    pattern: "--xtream-user {{ item.item.1.username }}"
+  become: true
+  loop: "{{ __upstream_test_results.results }}"
+  loop_control:
+    label: >-
+      Getting PIDs of iptv-proxy process for Account '{{ item.item.1.account }}'
+    index_var: __my_idx
+    extended: true
+    extended_allitems: false
+  register: __proxy_pids
+
+- name: "Number Connections | Kill pids of iptv-proxy processes of overloaded accounts"
+  ansible.builtin.command:
+    cmd: kill "{{ item.pids | first }}"
+  become: true
+  loop: "{{ __proxy_pids.results }}"
+  loop_control:
+    label: >-
+      Killing iptv-proxy PID {{ item.pids | first }} ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
+    index_var: __my_idx
+    extended: true
+    extended_allitems: false
+  changed_when: true
+
+- name: "Number Connections | Email report of removed upstreams"
+  community.general.mail:
+    from: "{{ role_iptvservice__email_sender }}"
+    to: "{{ role_iptvservice__email_recipients }}"
+    subject: "URGENT: Upstreams removed from IPTV Proxy"
+    host: "{{ role_iptvservice__email_server }}"
+    port: 25
+    secure: never
+    body: "{{ __upstream_test_results.results }}"
+  when: __upstream_test_results.results | selectattr('json.user_info.auth', 'ne', 1) | list | length > 0
 ...
