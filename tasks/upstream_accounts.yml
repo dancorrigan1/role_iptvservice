@@ -2,7 +2,7 @@
 - name: Debug
   ansible.builtin.debug:
     msg:
-      - "{{ item.0.provider_url }}"
+      - "{{ item.0.url }}"
       - "{{ item.1.xtream_user }}"
       - "{{ item.1.xtream_pass }}"
     loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
@@ -10,7 +10,7 @@
 
 - name: Test Connect to Each Upstream Account with URI module
   ansible.builtin.uri:
-    url: "{{ item.0.provider_url }}"
+    url: "{{ item.0.url }}"
     method: GET
     username: "{{ item.1.xtream_user }}"
     password: "{{ item.1.xtream_pass }}"
