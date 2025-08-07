@@ -16,9 +16,18 @@
     status_code: 200
   loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
   loop_control:
-   label: >-
-     Checking {{ item.1.account }}:{{ item.1.username }} at {{ item.0.url }}
-  register: upstream_test_results
+    label: >-
+      Checking {{ item.1.account }}:{{ item.1.username }} at {{ item.0.url }}
+  register: __upstream_test_results
+  ignore_errors: true
+
+- name: Report any failed upstream account connections
+  ansible.builtin.debug:
+    msg: "Failed to connect to upstream account {{ item.item.1.account }} at {{ item.item.0.url }} with username {{ item.item.1.username }}"
+  when: item.status != 200
+  loop: "{{ __upstream_test_results.results }}"
+
+
 
 # - name: Test Connect to Each Upstream Account with URI module
 #   ansible.builtin.uri:
