@@ -30,17 +30,6 @@
     label: >-
       Displaying {{ item.item.1.account }}:{{ item.item.1.username }} at {{ item.item.0.url }}
 
-- name: "Remove Upstreams for Overloaded Accounts"
-  ansible.builtin.replace:
-    path: "{{ role_iptvservice__nginx_conf }}"
-    regexp: '^(.*server.*{{ item.item.1.account }}.*)$'
-    replace: '# \1'
-  loop: "{{ __failed_upstreams }}"
-  loop_control:
-    label: >-
-      Removing upstream for Account '{{ item.item.1.account }}' from NGINX Config
-  when: (item.json is defined and item.json.user_info is defined and item.json.user_info.auth != 1) or item.status | string == '512'
-
 - name: "Number Connections | Get pids of iptv-proxy processes of overloaded accounts"
   community.general.pids:
     pattern: "--xtream-user {{ item.item.1.username }}"
@@ -55,22 +44,25 @@
     extended_allitems: false
   register: __proxy_pids
 
-- debug:
-    var: __proxy_pids
-
 - name: "Number Connections | Kill pids of iptv-proxy processes of overloaded accounts"
   ansible.builtin.command:
     cmd: "kill -9 {{ item.pids | join(' ') }}"
   become: true
   loop: "{{ __proxy_pids.results }}"
-  # loop_control:
-  #   label: >-
-  #     Killing iptv-proxy PID {{ item.pids }} ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
-  #   index_var: __my_idx
-  #   extended: true
-  #   extended_allitems: false
   changed_when: true
   when: item.pids | length > 0
+
+- name: "Remove Upstreams for Overloaded Accounts"
+  ansible.builtin.replace:
+    path: "{{ role_iptvservice__nginx_conf }}"
+    regexp: '^(.*server.*{{ item.item.1.account }}.*)$'
+    replace: '# \1'
+  loop: "{{ __failed_upstreams }}"
+  loop_control:
+    label: >-
+      Removing upstream for Account '{{ item.item.1.account }}' from NGINX Config
+  when: (item.json is defined and item.json.user_info is defined and item.json.user_info.auth != 1) or item.status | string == '512'
+  notify: Reload nginx
 
 - name: "Number Connections | Email report of removed upstreams"
   community.general.mail:
