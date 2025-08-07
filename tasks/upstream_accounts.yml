@@ -16,7 +16,7 @@
 - name: debug
   debug:
     msg: "Upstream test results: {{ item }}"
-  loop: '{{ __upstream_test_results.results }}''
+  loop: '{{ __upstream_test_results.results }}'
 
 # - name: Report any failed upstream account connections
 #   ansible.builtin.debug:
