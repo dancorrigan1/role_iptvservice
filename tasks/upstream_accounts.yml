@@ -74,7 +74,7 @@
     subtype: html
     secure: never
     body: |-
-      <p>The following upstream accounts were removed or failed:</p>
+      <p>The following upstream accounts were removed due to failed login:</p>
       <ul>
       {% for item in __failed_upstreams %}
         <li>
