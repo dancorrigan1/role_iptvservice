@@ -11,11 +11,11 @@
 
 - name: Test Connect to Each Upstream Account with URI module
   ansible.builtin.uri:
-    url: http://etvserv.xyz:55337
+    url: http://www.google.com
     method: GET
-    url_username: DKDe9yb7Wg
-    url_password: RfCj995pa
-    force_basic_auth: true
+    #url_username: DKDe9yb7Wg
+    ##url_password: RfCj995pa
+    #force_basic_auth: true
     # status_code: 200
   # loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
   # loop_control:
