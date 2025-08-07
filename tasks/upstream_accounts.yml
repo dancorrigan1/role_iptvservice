@@ -16,7 +16,20 @@
     password: "{{ item.1.password }}"
     status_code: 200
   loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
+  loop_control:
+    label: >-
+      Checking {{ item.1.account }}:{{ item.1.username }} at {{ item.0.url }}
   register: upstream_test_results
+
+# - name: Test Connect to Each Upstream Account with URI module
+#   ansible.builtin.uri:
+#     url: "{{ item.0.url }}"
+#     method: GET
+#     username: "{{ item.1.username }}"
+#     password: "{{ item.1.password }}"
+#     status_code: 200
+#   loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
+#   register: upstream_test_results
 
 
 # - name: Upstream Account Tester
