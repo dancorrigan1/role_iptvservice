@@ -5,7 +5,7 @@
       - "{{ item.0.url }}"
       - "{{ item.1.xtream_user }}"
       - "{{ item.1.xtream_pass }}"
-    loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
+  loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
 
 
 - name: Test Connect to Each Upstream Account with URI module
