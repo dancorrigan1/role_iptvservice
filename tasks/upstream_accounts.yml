@@ -13,12 +13,6 @@
   ignore_errors: true
   no_log: false
 
-- name: debug
-  debug:
-    msg:
-      - '{{ item.json.user_info.auth }}'
-  loop: '{{ __upstream_test_results.results }}'
-
 - name: Report any failed upstream account connections
   ansible.builtin.debug:
     msg: "Failed to connect to upstream account {{ item.item.account }} at {{ item.item.url }} with username {{ item.item.username }}"
@@ -26,7 +20,7 @@
   loop: "{{ __upstream_test_results.results }}"
   loop_control:
     label: >-
-      Displaying {{ item.item.1.account }}:{{ item.item.1.username }} at {{ item.item.0.url }}
+      Displaying {{ item.item.account }}:{{ item.item.username }} at {{ item.item.url }}
 
 
     # "json": {
