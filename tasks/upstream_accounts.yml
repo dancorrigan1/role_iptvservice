@@ -55,7 +55,7 @@
 - name: "Upstream Accounts | Remove Upstreams for Overloaded Accounts"
   ansible.builtin.replace:
     path: "{{ role_iptvservice__nginx_conf }}"
-    regexp: '^(.*server.*{{ item.item.1.account }}.*)$'
+    regexp: '^(.*server.*{{ item.item.1.account }} -.*)$'
     replace: '# \1'
   loop: "{{ __failed_upstreams }}"
   loop_control:
