@@ -65,4 +65,13 @@
         - numconnections
   tags:
     - numconnections
+
+- name: "Main | Include numconnections task file"
+  ansible.builtin.include_tasks:
+    file: upstream_accounts.yml
+    apply:
+      tags:
+        - upstream_accounts
+  tags:
+    - upstream_accounts
 ...
