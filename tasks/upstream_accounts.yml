@@ -15,7 +15,7 @@
 
 - name: debug
   debug:
-    msg: "Upstream test results: {{ item.item | to_nice_yaml }}"
+    msg: "Upstream test results: {{ item.user_info }}"
   loop: '{{ __upstream_test_results.results }}'
 
 # - name: Report any failed upstream account connections
