@@ -57,6 +57,7 @@
     extended: true
     extended_allitems: false
   changed_when: true
+  when: item.pids | length > 0
 
 - name: "Number Connections | Email report of removed upstreams"
   community.general.mail:
