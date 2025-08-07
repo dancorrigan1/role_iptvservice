@@ -80,14 +80,17 @@
     subtype: html
     secure: never
     body: |-
-      The following upstream accounts were removed or failed:
-
+      <p>The following upstream accounts were removed or failed:</p>
+      <ul>
       {% for item in __failed_upstreams %}
-      - Account: {{ item.item.1.account }}
-        Username: {{ item.item.1.username }}
-        URL: {{ item.item.0.url }}
-        Status: {{ item.status }}
-        Auth Result: {{ item.json.user_info.auth if item.json is defined and item.json.user_info is defined else 'N/A' }}
+        <li>
+          <strong>Account:</strong> {{ item.item.1.account }}<br>
+          <strong>Username:</strong> {{ item.item.1.username }}<br>
+          <strong>URL:</strong> {{ item.item.0.url }}<br>
+          <strong>Status:</strong> {{ item.status }}<br>
+          <strong>Auth Result:</strong> {{ item.json.user_info.auth if item.json is defined and item.json.user_info is defined else 'N/A' }}
+        </li>
       {% endfor %}
+  </ul>
   when: __failed_upstreams | length > 0
 ...
