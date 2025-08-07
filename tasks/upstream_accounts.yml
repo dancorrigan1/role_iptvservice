@@ -18,4 +18,7 @@
     msg: "Failed to connect to upstream account {{ item.item.1.account }} at {{ item.item.0.url }} with username {{ item.item.1.username }}"
   when: item.status != 200
   loop: "{{ __upstream_test_results.results }}"
+  loop_control:
+    label: >-
+      Displaying {{ item.item.1.account }}:{{ item.item.1.username }} at {{ item.item.0.url }}
 ...
