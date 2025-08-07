@@ -15,7 +15,7 @@
 - name: Report any failed upstream account connections
   ansible.builtin.debug:
     msg: "Failed to connect to upstream account {{ item.item.1.account }} at {{ item.item.0.url }} with username {{ item.item.1.username }}"
-  when: item.json.user_info.auth != 1 or item.status == '512'
+  when: (item.json is defined and item.json.user_info.auth != 1) or item.status == '512'
   loop: "{{ __upstream_test_results.results }}"
   loop_control:
     label: >-
@@ -30,7 +30,7 @@
   loop_control:
     label: >-
       Removing upstream for Account '{{ item.item.1.account }}' from NGINX Config
-  when: item.json.user_info.auth != 1 or item.status == '512'
+  when: (item.json is defined and item.json.user_info.auth != 1) or item.status == '512'
 
 - name: "Number Connections | Get pids of iptv-proxy processes of overloaded accounts"
   community.general.pids:
