@@ -1,8 +1,11 @@
 ---
 - name: Debug
   ansible.builtin.debug:
-    msg: "{{ item }}"
+    msg: "{{ item.name }} - {{ item.url }}"
   loop: "{{ role_iptvservice__credentials }}"
+
+
+
 # - name: Upstream Account Tester
 #   ansible.builtin.set_fact:
 #     __upstream_accounts: >-
