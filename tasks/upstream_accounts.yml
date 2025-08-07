@@ -1,9 +1,22 @@
 ---
 - name: Debug
   ansible.builtin.debug:
-    msg: "{{ item.name }} - {{ item.url }}"
-  loop: "{{ role_iptvservice__credentials }}"
+    msg:
+      - "{{ item.0.provider_url }}"
+      - "{{ item.1.xtream_user }}"
+      - "{{ item.1.xtream_pass }}"
+    loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
 
+
+- name: Test Connect to Each Upstream Account with URI module
+  ansible.builtin.uri:
+    url: "{{ item.0.provider_url }}"
+    method: GET
+    username: "{{ item.1.xtream_user }}"
+    password: "{{ item.1.xtream_pass }}"
+    status_code: 200
+  loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
+  register: upstream_test_results
 
 
 # - name: Upstream Account Tester
