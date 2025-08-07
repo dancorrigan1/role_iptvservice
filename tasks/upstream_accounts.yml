@@ -32,7 +32,7 @@
 
 - name: "Upstream Accounts | Get pids of iptv-proxy processes of overloaded accounts"
   community.general.pids:
-    pattern: "--xtream-user {{ item.item.1.username }}"
+    pattern: "--xtream-user {{ item.item.1.username }} --xtream-password {{ item.item.1.password }}"
   become: true
   loop: "{{ __failed_upstreams }}"
   when: (item.json is defined and item.json.user_info is defined and item.json.user_info.auth != 1) or item.status | string == '512'
