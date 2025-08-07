@@ -1,5 +1,5 @@
 ---
-- name: Test Connect to Each Upstream Account with URI module
+- name: "Upstream Accounts | Test Connect to Each Upstream Account"
   ansible.builtin.uri:
     url: "{{ item.0.url }}/player_api.php?username={{ item.1.username }}&password={{ item.1.password }}"
     method: GET
@@ -12,7 +12,7 @@
   ignore_errors: true
   no_log: false
 
-- name: Identify failed upstream results
+- name: "Upstream Accounts | Identify failed upstream results"
   ansible.builtin.set_fact:
     __failed_upstreams: >-
       {{ __upstream_test_results.results
@@ -21,7 +21,7 @@
          | list
          + (__upstream_test_results.results | selectattr('status', 'equalto', 512) | list) }}
 
-- name: Report any failed upstream account connections
+- name: "Upstream Accounts | Report any failed upstream account connections"
   ansible.builtin.debug:
     msg: "Failed to connect to upstream account {{ item.item.1.account }} at {{ item.item.0.url }} with username {{ item.item.1.username }}"
   when: (item.json is defined and item.json.user_info.auth != 1) or item.status == '512'
@@ -30,7 +30,7 @@
     label: >-
       Displaying {{ item.item.1.account }}:{{ item.item.1.username }} at {{ item.item.0.url }}
 
-- name: "Number Connections | Get pids of iptv-proxy processes of overloaded accounts"
+- name: "Upstream Accounts | Get pids of iptv-proxy processes of overloaded accounts"
   community.general.pids:
     pattern: "--xtream-user {{ item.item.1.username }}"
   become: true
@@ -44,7 +44,7 @@
     extended_allitems: false
   register: __proxy_pids
 
-- name: "Number Connections | Kill pids of iptv-proxy processes of overloaded accounts"
+- name: "Upstream Accounts | Kill pids of iptv-proxy processes of overloaded accounts"
   ansible.builtin.command:
     cmd: "kill -9 {{ item.pids | join(' ') }}"
   become: true
@@ -64,7 +64,7 @@
   when: (item.json is defined and item.json.user_info is defined and item.json.user_info.auth != 1) or item.status | string == '512'
   notify: Reload nginx
 
-- name: "Number Connections | Email report of removed upstreams"
+- name: "Upstream Accounts | Email report of removed upstreams"
   community.general.mail:
     from: "{{ role_iptvservice__email_sender }}"
     to: "{{ role_iptvservice__email_recipients }}"
