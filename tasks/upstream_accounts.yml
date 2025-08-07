@@ -12,8 +12,8 @@
   ansible.builtin.uri:
     url: "{{ item.0.url }}"
     method: GET
-    username: "{{ item.1.username }}"
-    password: "{{ item.1.password }}"
+    url_username: "{{ item.1.username }}"
+    url_password: "{{ item.1.password }}"
     status_code: 200
   loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
   loop_control:
