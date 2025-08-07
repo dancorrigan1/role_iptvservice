@@ -48,8 +48,9 @@
 
 - name: Debug
   ansible.builtin.debug:
-    msg: '{{ item.pids }}'
+    msg: '{{ item }}'
   loop: "{{ __proxy_pids.results }}"
+
 # - name: "Number Connections | Kill pids of iptv-proxy processes of overloaded accounts"
 #   ansible.builtin.command:
 #     cmd: kill "{{ item.pids | first }}"
