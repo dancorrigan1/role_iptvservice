@@ -4,7 +4,7 @@
     __upstream_accounts: >-
       {%- set __upstream_accounts = [] -%}
       {%- for account in role_iptvservice__credentials -%}
-        {%- for provider_credential in account.provider_credentials -%}
+        {%- for provider_credential in role_iptvservice__credentials -%}
           {%- set account_dict = {
             'provider_url': provider_credential.provider_url,
             'xtream_account': provider_credential.xtream_account,
