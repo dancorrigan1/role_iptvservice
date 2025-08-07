@@ -94,6 +94,6 @@
           <strong>Auth Result:</strong> {{ item.json.user_info.auth if item.json is defined and item.json.user_info is defined else 'N/A' }}
         </li>
       {% endfor %}
-  </ul>
+      </ul>
   when: __failed_upstreams | length > 0
 ...
