@@ -55,6 +55,9 @@
     extended_allitems: false
   register: __proxy_pids
 
+- debug:
+    var: __proxy_pids
+
 - name: "Number Connections | Kill pids of iptv-proxy processes of overloaded accounts"
   ansible.builtin.command:
     cmd: echo {{ item.pids | join(' ') }}
