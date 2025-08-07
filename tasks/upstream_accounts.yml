@@ -60,8 +60,7 @@
 
 - name: "Number Connections | Kill pids of iptv-proxy processes of overloaded accounts"
   ansible.builtin.command:
-    cmd: echo {{ item.pids | join(' ') }} >> /tmp/wouldkill.txt
-    # cmd: kill "{{ item.pids | join(' ') }}
+    cmd: "kill -9 {{ item.pids | join(' ') }}"
   become: true
   loop: "{{ __proxy_pids.results }}"
   # loop_control:
