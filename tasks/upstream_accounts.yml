@@ -45,19 +45,23 @@
     extended_allitems: false
   register: __proxy_pids
 
-- name: "Number Connections | Kill pids of iptv-proxy processes of overloaded accounts"
-  ansible.builtin.command:
-    cmd: kill "{{ item.pids | first }}"
-  become: true
+- name: Debug
+  ansible.builtin.debug:
+    msg: '{{ item.pids }}'
   loop: "{{ __proxy_pids.results }}"
-  loop_control:
-    label: >-
-      Killing iptv-proxy PID {{ item.pids | first }} ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
-    index_var: __my_idx
-    extended: true
-    extended_allitems: false
-  changed_when: true
-  when: item.pids | length > 0
+# - name: "Number Connections | Kill pids of iptv-proxy processes of overloaded accounts"
+#   ansible.builtin.command:
+#     cmd: kill "{{ item.pids | first }}"
+#   become: true
+#   loop: "{{ __proxy_pids.results }}"
+#   loop_control:
+#     label: >-
+#       Killing iptv-proxy PID {{ item.pids | first }} ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
+#     index_var: __my_idx
+#     extended: true
+#     extended_allitems: false
+#   changed_when: true
+#   when: item.pids | length > 0
 
 - name: "Number Connections | Email report of removed upstreams"
   community.general.mail:
