@@ -39,13 +39,13 @@
       {% endfor %}
       {{ __overloaded_upstreams }}
 
-- name: Debug results
-  ansible.builtin.debug:
-    msg: "{{ __upstream_test_results.results }}"
+# - name: Debug results
+#   ansible.builtin.debug:
+#     msg: "{{ __upstream_test_results.results }}"
 
-- name: Debug failed
-  ansible.builtin.debug:
-    msg: "{{ __failed_upstreams }}"
+# - name: Debug failed
+#   ansible.builtin.debug:
+#     msg: "{{ __failed_upstreams }}"
 
 - name: Debug successful
   ansible.builtin.debug:
