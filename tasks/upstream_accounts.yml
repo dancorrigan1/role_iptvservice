@@ -44,7 +44,7 @@
       {%- set out = [] -%}
       {%- for us in __successful_upstreams -%}
         {%- if us.active_cons is defined and us.max_connections is defined
-              and (us.active_cons | int) >= ((us.max_connections | int) - 2) -%}
+              and (us.active_cons | int) >= ((us.max_connections | int) - 1) -%}
           {%- set _ = out.append(us) -%}
         {%- endif -%}
       {%- endfor -%}
