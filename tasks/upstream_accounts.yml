@@ -50,20 +50,14 @@
       {%- endfor -%}
       {{ out }}
 
-# - name: Debug successful
-#   ansible.builtin.debug:
-#     msg: |
-#       {% for item in __successful_upstreams -%}
-#       {{ item.username }}@{{ item.url }} has {{ item.active_cons }}/{{ item.max_connections }} connections
-#       {%- endfor %}
-
-- name: Debug each successful upstream
+- name: Upstream Accounts | Report successful upstreams
   ansible.builtin.debug:
     msg: "{{ item.username }}@{{ item.url }} has {{ item.active_cons }}/{{ item.max_connections }} connections"
   loop: "{{ __successful_upstreams }}"
+  loop_control:
+    label: "Displaying {{ item.account }}:{{ item.username }} at {{ item.url }}"
 
-
-- name: Upstream Accounts | Report failed connections
+- name: Upstream Accounts | Report failed upstreams
   ansible.builtin.debug:
     msg: "Failed to connect to upstream account {{ item.account }} at {{ item.url }} with username {{ item.username }}"
   loop: "{{ __failed_upstreams }}"
@@ -147,8 +141,6 @@
       {% endfor %}
       </ul>
   when: __failed_upstreams | length > 0
-...
-
 
 # ---
 # - name: "Upstream Accounts | Test Connect to Each Upstream Account"
@@ -301,4 +293,4 @@
 #       {% endfor %}
 #       </ul>
 #   when: __failed_upstreams | length > 0
-# ...
+...
