@@ -39,6 +39,12 @@
       {% endfor %}
       {{ __overloaded_upstreams }}
 
+- name: Debug
+  ansible.builtin.debug:
+    var:
+      - __successful_upstreams
+      - __overloaded_upstreams
+
 - name: "Upstream Accounts | Report any failed Upstream Account connections"
   ansible.builtin.debug:
     msg: "Failed to connect to upstream account {{ item.item.1.account }} at {{ item.item.0.url }} with username {{ item.item.1.username }}"
