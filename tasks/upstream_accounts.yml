@@ -41,8 +41,7 @@
 
 - name: Debug
   ansible.builtin.debug:
-    var:
-      - __upstream_test_results.results
+    msg: "{{ __upstream_test_results.results }}"
 
 - name: "Upstream Accounts | Report any failed Upstream Account connections"
   ansible.builtin.debug:
