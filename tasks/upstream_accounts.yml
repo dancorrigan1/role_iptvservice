@@ -43,7 +43,6 @@
   ansible.builtin.debug:
     var:
       - __successful_upstreams
-      - __overloaded_upstreams
 
 - name: "Upstream Accounts | Report any failed Upstream Account connections"
   ansible.builtin.debug:
