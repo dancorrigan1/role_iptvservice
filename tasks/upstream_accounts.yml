@@ -20,8 +20,26 @@
          | selectattr('json.user_info.auth', 'ne', 1)
          | list
          + (__upstream_test_results.results | selectattr('status', 'equalto', 512) | list) }}
+    __successful_upstreams: >-
+      {{ __upstream_test_results.results
+         | selectattr('json.user_info.auth', 'defined')
+         | selectattr('json.user_info.auth', 'eq', 1)
+         | list }}
 
-- name: "Upstream Accounts | Report any failed upstream account connections"
+- name: "Upstream Accounts | Identify if any Upstream Accounts are at risk of being overloaded"
+  ansible.builtin.set_fact:
+    __overloaded_upstreams: >-
+      {% set __overloaded_upstreams = [] %}
+      {% for __us in __successful_upstreams %}
+        {% set __active_cons = __us.active_cons %}
+        {% set __max_cons = __us.max_connections %}
+        {% if __active_cons is defined and __max_cons is defined and (__active_cons >= (__max_cons - 2)) %}
+          {% set __overloaded_upstreams = __overloaded_upstreams + [__us] %}
+        {% endif %}
+      {% endfor %}
+      {{ __overloaded_upstreams }}
+
+- name: "Upstream Accounts | Report any failed Upstream Account connections"
   ansible.builtin.debug:
     msg: "Failed to connect to upstream account {{ item.item.1.account }} at {{ item.item.0.url }} with username {{ item.item.1.username }}"
   when: (item.json is defined and item.json.user_info.auth != 1) or item.status == '512'
@@ -30,7 +48,7 @@
     label: >-
       Displaying {{ item.item.1.account }}:{{ item.item.1.username }} at {{ item.item.0.url }}
 
-- name: "Upstream Accounts | Get pids of iptv-proxy processes of overloaded accounts"
+- name: "Upstream Accounts | Get pids of iptv-proxy processes of failed Upstream Accounts"
   community.general.pids:
     pattern: "--xtream-user {{ item.item.1.username }} --xtream-password {{ item.item.1.password }}"
   become: true
@@ -44,7 +62,7 @@
     extended_allitems: false
   register: __proxy_pids
 
-- name: "Upstream Accounts | Kill pids of iptv-proxy processes of overloaded accounts"
+- name: "Upstream Accounts | Kill pids of iptv-proxy processes of failed Upstream Accounts"
   ansible.builtin.command:
     cmd: "kill -9 {{ item.pids | join(' ') }}"
   become: true
@@ -52,7 +70,7 @@
   changed_when: true
   when: item.pids | length > 0
 
-- name: "Upstream Accounts | Remove Upstreams for Overloaded Accounts"
+- name: "Upstream Accounts | Remove Upstreams for Failed Accounts"
   ansible.builtin.replace:
     path: "{{ role_iptvservice__nginx_conf }}"
     regexp: '^(.*server.*{{ item.item.1.account }} -.*)$'
@@ -64,7 +82,33 @@
   when: (item.json is defined and item.json.user_info is defined and item.json.user_info.auth != 1) or item.status | string == '512'
   notify: Reload nginx
 
-- name: "Upstream Accounts | Email report of removed upstreams"
+- name: "Upstream Accounts | Email report of failed Overloaded Accounts"
+  community.general.mail:
+    from: "{{ role_iptvservice__email_sender }}"
+    to: "{{ role_iptvservice__email_recipients }}"
+    subject: "URGENT: Upstreams removed from IPTV Proxy"
+    host: "{{ role_iptvservice__email_server }}"
+    port: 25
+    subtype: html
+    secure: never
+    body: |-
+      <p>The following upstream accounts are in danger of being overloaded</p>
+      <ul>
+      {% for item in __overloaded_upstreams %}
+        <li>
+          <strong>Account:</strong> {{ item.item.1.account }}<br>
+          <strong>Username:</strong> {{ item.item.1.username }}<br>
+          <strong>URL:</strong> {{ item.item.0.url }}<br>
+          <strong>Status:</strong> {{ item.status }}<br>
+          <strong>Auth Result:</strong> {{ item.json.user_info.auth if item.json is defined and item.json.user_info is defined else 'N/A' }}
+          <strong>Active Connections:</strong> {{ item.active_cons if item.active_cons is defined else 'N/A' }}<br>
+          <strong>Max Connections:</strong> {{ item.max_connections if item.max_connections is defined else 'N/A' }}
+        </li>
+      {% endfor %}
+      </ul>
+  when: __failed_upstreams | length > 0
+
+- name: "Upstream Accounts | Email report of failed Upstream Accounts"
   community.general.mail:
     from: "{{ role_iptvservice__email_sender }}"
     to: "{{ role_iptvservice__email_recipients }}"
