@@ -49,7 +49,7 @@
 
 - name: Debug successful
   ansible.builtin.debug:
-    msg: "{{ __successful_upstreams | map(attribute='item') | map(attribute='json.user_info.auth') }}"
+    msg: "{{ __successful_upstreams | map(attribute='item') }}"
 
 - name: "Upstream Accounts | Report any failed Upstream Account connections"
   ansible.builtin.debug:
