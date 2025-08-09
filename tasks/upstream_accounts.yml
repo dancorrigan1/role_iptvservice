@@ -53,7 +53,8 @@
       {%- for item in __successful_upstreams
       -%}{{ item.json.user_info.username }}@{{ item.json.server_info.url }} has
       {{ item.json.user_info.active_cons }}/{{ item.json.user_info.max_connections }}
-      connections{%- endfor -%}
+      connections
+      {% endfor -%}
 
 
 - name: "Upstream Accounts | Report any failed Upstream Account connections"
