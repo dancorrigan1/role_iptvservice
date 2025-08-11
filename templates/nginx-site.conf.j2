@@ -45,11 +45,14 @@ server {
       }
 {% if not live | bool %}
       # block live
-      if ($arg_action ~* ^(get_live_categories|get_live_streams)$) {
-        return 403;
-      }
-      if ($uri ~* /live) {
-        return 403;
+      # if ($arg_action ~* ^(get_live_categories|get_live_streams)$) {
+      #  return 403;
+      # }
+      # if ($uri ~* /live) {
+      #   return 403;
+      # }
+      if ($uri ~ ^/([^/]+)/live/\1/\1/\d+\.ts$) {
+         return 302 https://yiafe.com/oos.ts;
       }
 {% endif %}
 {% if not vod | bool %}
@@ -139,14 +142,14 @@ server {
    # Protected Paths
 {% if role_iptvservice__protected_paths is defined and role_iptvservice__protected_paths | length > 0 %}
 {% for item in role_iptvservice__protected_paths %}
-   location {{ item.path }} { 
+   location {{ item.path }} {
    {% for arg in item.args %}
       {{ arg }}
    {% endfor %}
    }
 {% endfor %}
 {% endif %}
-   
+
    # PHP
    location ~ \.php$ {
       try_files $uri =404;
