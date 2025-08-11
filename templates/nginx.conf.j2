@@ -12,6 +12,7 @@ map $request_uri $uri_username {
     "~^/live/([^/]+)/" $1;
     "~^/vod/([^/]+)/" $1;
     "~^/movie/([^/]+)/" $1;
+    "~^/series/([^/]+)/" $1;
     default "";
 }
 
