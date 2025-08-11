@@ -45,12 +45,6 @@ server {
       }
 {% if not live | bool %}
       # block live
-      # if ($arg_action ~* ^(get_live_categories|get_live_streams)$) {
-      #  return 403;
-      # }
-      # if ($uri ~* /live) {
-      #   return 403;
-      # }
       if ($uri ~ ^/([^/]+)/live/\1/\1/\d+\.ts$) {
          return 302 https://yiafe.com/oos.ts;
       }
