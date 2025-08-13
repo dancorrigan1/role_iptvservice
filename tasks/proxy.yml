@@ -34,10 +34,11 @@
 
 - name: Stop & disable stale instances
   ansible.builtin.service:
-    name: "iptv-proxy@{{ item | regex_replace('\\.env$','') }}"
+    name: "iptv-proxy@{{ item | regex_replace('\\.env$', '') }}"
     state: stopped
     enabled: false
-  loop: "{{ __env_scan.files | map(attribute='path') | map('basename') | difference(__desired_instances | map('regex_replace', '$', '.env') | list) | map('regex_replace','\\.env$','') | list }}"
+  loop: "{{ __env_scan.files | map(attribute='path') | map('basename') | difference(__desired_instances
+    | map('regex_replace', '$', '.env') | list) | map('regex_replace', '\\.env$', '') | list }}"
   loop_control:
     label: "{{ item }}"
 
@@ -45,10 +46,11 @@
   ansible.builtin.file:
     path: "{{ role_iptvservice__proxy_env_dir }}/{{ item }}.env"
     state: absent
-  loop: "{{ (__env_scan.files | map(attribute='path') | map('basename') | list) | map('regex_replace','\\.env$','') | difference(__desired_instances) | list }}"
+  loop: "{{ (__env_scan.files | map(attribute='path') | map('basename') | list)
+    | map('regex_replace', '\\.env$','') | difference(__desired_instances) | list }}"
   when: (__env_scan.files | length) > 0
 
-- name: systemd daemon-reload
+- name: Reload systemd daemon-reload
   ansible.builtin.systemd:
     daemon_reload: true
 

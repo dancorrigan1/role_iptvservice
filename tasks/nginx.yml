@@ -32,7 +32,7 @@
     state: absent
   notify: reload nginx
 
-- name: nginx -t
+- name: Config check - nginx -t
   ansible.builtin.command: nginx -t
   register: __nginx_test
   changed_when: false

@@ -3,8 +3,8 @@
   ansible.builtin.user:
     name: "{{ role_iptvservice__auth_user }}"
     group: "{{ role_iptvservice__auth_group }}"
-    create_home: no
-    system: yes
+    create_home: false
+    system: true
 
 - name: Create auth root directory
   ansible.builtin.file:
@@ -59,7 +59,7 @@
     dest: /etc/systemd/system/iptv-auth.service
     mode: "0644"
 
-- name: systemd daemon-reload
+- name: Reload systemd daemon-reload
   ansible.builtin.systemd:
     daemon_reload: true
 
