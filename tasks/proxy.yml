@@ -60,4 +60,3 @@
   loop: "{{ __backends }}"
   loop_control:
     label: "{{ item.name }}"
-...

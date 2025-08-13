@@ -39,4 +39,3 @@
 
 - name: Reload nginx if not yet
   ansible.builtin.meta: flush_handlers
-...
