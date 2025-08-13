@@ -1,130 +1,161 @@
 #!/usr/bin/env python3
-import base64
-import json
-import logging
-import os
+import os, json, base64, logging, hashlib, re
+from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urlsplit, parse_qs
 from flask import Flask, request, Response
 
-APP_PORT = {{ role_iptvservice__auth_port }}
-AUTH_ROOT = "{{ role_iptvservice__auth_root }}"
-USERS_PATH = os.path.join(AUTH_ROOT, "users.json")
-BACKENDS_PATH = os.path.join(AUTH_ROOT, "backends.json")
+AUTH_ROOT    = os.environ.get("IPTV_AUTH_ROOT", "/opt/iptv-auth")
+USERS_JSON   = os.path.join(AUTH_ROOT, "users.json")
+BACKENDS_JSON= os.path.join(AUTH_ROOT, "backends.json")
 
-DESIRED_EXT = "{{ role_iptvservice__desired_ext }}"
+# Where to send viewers if live==false and they request a channel segment:
+OOS_REDIRECT_URL = os.environ.get(
+    "IPTV_AUTH_OOS_URL",
+    "https://{{ (role_iptvservice__iptv_hostname | first) | trim }}/oos.ts"
+)
 
+# iptv-proxy runs locally on these ports
+BACKEND_HOST   = os.environ.get("IPTV_PROXY_HOST", "127.0.0.1")
+BACKEND_SCHEME = os.environ.get("IPTV_PROXY_SCHEME", "http")
+
+LOG_LEVEL = os.environ.get("IPTV_AUTH_LOG", "{{ (role_iptvservice__auth_log_level | default('INFO')) | upper }}").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(message)s",
+)
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-def load_json(path, default):
+# Treat only real live segments as “channel playback” (.ts). Supports optional /USERNAME prefix.
+CHAN_RE = re.compile(r"^/(?:[^/]+/)?live/[^/]+/[^/]+/\d+\.ts(?:\?.*)?$", re.IGNORECASE)
+
+def _load_json(path: str) -> Any:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def _safe_bool(v: Any, default: bool = True) -> bool:
+    if isinstance(v, bool): return v
+    if v is None: return default
+    s = str(v).strip().lower()
+    if s in ("1","true","yes","y","on"): return True
+    if s in ("0","false","no","n","off"): return False
+    return default
+
+def _parse_basic(auth: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    if not auth: return None, None
     try:
-        with open(path, "r") as f:
-            return json.load(f)
-    except Exception:
-        return default
-
-USERS = load_json(USERS_PATH, {})
-BACKENDS = load_json(BACKENDS_PATH, [])
-
-def pick_backend_for_user(username: str):
-    if not BACKENDS:
-        return None
-    # Stable spread: hash username → index
-    h = sum(map(ord, username)) if username else 0
-    return BACKENDS[h % len(BACKENDS)]
-
-def parse_basic(auth_header: str):
-    if not auth_header or not auth_header.lower().startswith("basic "):
-        return (None, None)
-    try:
-        raw = base64.b64decode(auth_header.split(None, 1)[1]).decode("utf-8")
+        scheme, blob = auth.split(" ", 1)
+        if scheme.lower() != "basic": return None, None
+        raw = base64.b64decode(blob.strip()).decode("utf-8", errors="ignore")
+        if ":" not in raw: return None, None
         u, p = raw.split(":", 1)
-        return (u, p)
+        return u, p
     except Exception:
-        return (None, None)
+        return None, None
 
-@app.route("/healthz")
+def _extract_creds() -> Tuple[Optional[str], Optional[str], str]:
+    """
+    Pull creds from (in order):
+      1) Authorization: Basic ...
+      2) Subrequest querystring (usually empty for auth subreq)
+      3) X-Original-URI header’s querystring (the real client URL with args)
+    Return (user, pass, original_path_only) for logging + .ts gating.
+    """
+    # 1) Basic from client
+    hu, hp = _parse_basic(request.headers.get("Authorization"))
+
+    # 2) Subrequest query (normally empty because we call /_auth without args)
+    qu = request.args.get("username") or request.args.get("user")
+    qp = request.args.get("password") or request.args.get("pass")
+
+    # 3) If still missing, parse from X-Original-URI (set by nginx)
+    orig = request.headers.get("X-Original-URI") or request.full_path or request.path
+    # original path (no query) so we can test CHAN_RE
+    path_only = orig.split("?", 1)[0]
+
+    if not qu or not qp:
+        try:
+            parts = urlsplit(orig)
+            q = parse_qs(parts.query or "")
+            qu = qu or (q.get("username", q.get("user", [None]))[0])
+            qp = qp or (q.get("password", q.get("pass", [None]))[0])
+        except Exception:
+            pass
+
+    user = hu or qu
+    pw   = hp or qp
+    return user, pw, path_only
+
+def _map_backend(user: str, backends: list[Dict[str, Any]]) -> Dict[str, Any]:
+    # Stable hash → consistent backend for a user across runs
+    if len(backends) <= 1:
+        return backends[0]
+    h = hashlib.md5(user.encode("utf-8")).hexdigest()
+    idx = int(h, 16) % len(backends)
+    return backends[idx]
+
+def _basic_blob(u: str, p: str) -> str:
+    return "Basic " + base64.b64encode(f"{u}:{p}".encode("utf-8")).decode("ascii")
+
+# Load config (once)
+try:
+    USERS = _load_json(USERS_JSON)
+except Exception as e:
+    logging.error("load %s failed: %s", USERS_JSON, e)
+    USERS = {}
+
+try:
+    RAW_BACKENDS = _load_json(BACKENDS_JSON)
+except Exception as e:
+    logging.error("load %s failed: %s", BACKENDS_JSON, e)
+    RAW_BACKENDS = []
+
+BACKENDS = []
+for b in RAW_BACKENDS:
+    port = int(b["port"])
+    BACKENDS.append({
+        **b,
+        "base": f"{BACKEND_SCHEME}://{BACKEND_HOST}:{port}",
+    })
+
+@app.route("/healthz", methods=["GET"])
 def healthz():
-    return "ok", 200
+    return Response("ok\n", 200, mimetype="text/plain")
 
-@app.route("/auth")
+@app.route("/auth", methods=["GET"])
 def auth():
-    # inputs from nginx
-    x_user = request.headers.get("X-Q-User", "").strip()
-    x_pass = request.headers.get("X-Q-Pass", "").strip()
-    x_path = request.headers.get("X-Path-User", "").strip()
+    user, pw, path_only = _extract_creds()
+    logging.info("auth start: user=%s path=%s", user or "-", path_only)
 
-    # query fallback
-    q_user = request.args.get("username", "").strip()
-    q_pass = request.args.get("password", "").strip()
-
-    # basic auth
-    b_user, b_pass = parse_basic(request.headers.get("Authorization"))
-
-    # pick first present: basic > query > path
-    user = next((x for x in [b_user, q_user, x_user, x_path] if x), "")
-    passwd = next((x for x in [b_pass, q_pass, x_pass] if x), "")
-
-    has_basic = bool(b_user)
-    q_path = request.args.get("path_user", "").strip()
-    src = "basic" if has_basic else ("query" if q_user else ("header" if x_user else ("path-header" if x_path else "none")))
-
-    # validate
-    ok = False
-    display_user = "-"
-    display_pass = "-"
-    if user and user in USERS:
-        stored = USERS[user]
-        if passwd == stored.get("password"):
-            ok = True
-            display_user = user
-            display_pass = passwd
-
-    if not ok:
-        logging.info("auth 401 for user=%s", user or "-")
+    if not user or user not in USERS:
+        return Response(status=401)
+    rec = USERS[user]
+    expect = str(rec.get("password", ""))  # exact match
+    if pw and pw != expect:
         return Response(status=401)
 
-    # pick backend and emit headers nginx needs
-    be = pick_backend_for_user(user)
-    if not be:
-        logging.info("auth 503 no backends")
+    live_on = _safe_bool(rec.get("live", True), True)
+    # vod_on = _safe_bool(rec.get("vod", True), True)  # keep for later gating if desired
+
+    # If live is OFF and this is a real channel segment, ask nginx to 302 the client to OOS.
+    if not live_on and CHAN_RE.match(path_only or ""):
+        logging.info("live disabled for %s -> redirect %s", user, OOS_REDIRECT_URL)
+        resp = Response(status=403)
+        resp.headers["X-Redirect"] = OOS_REDIRECT_URL
+        resp.headers["X-Live-Disabled"] = "1"
+        return resp
+
+    if not BACKENDS:
         return Response(status=503)
+    be = _map_backend(user, BACKENDS)
 
-    backend = f"http://127.0.0.1:{be['port']}"
-    # Build rewrite args: keep original args but ensure username/password are backend creds for upstream
-    # (client still sees display creds via nginx sub_filter)
-    # Preserve any other args client sent
-    orig = request.headers.get("X-Orig-Args", "")
-    # Force upstream creds:
-    pieces = []
-    extra = []
-    if orig:
-        # strip existing username/password from orig
-        for kv in orig.split("&"):
-            if kv.startswith("username=") or kv.startswith("password="):
-                continue
-            if kv != "":
-                extra.append(kv)
-    extra.append(f"username={be['proxy_user']}")
-    extra.append(f"password={be['proxy_pass']}")
-    rewrite_args = "&".join(extra)
-
-    headers = {
-        "X-Backend": backend,
-        "X-Basic": "Basic " + base64.b64encode(f"{be['proxy_user']}:{be['proxy_pass']}".encode()).decode(),
-        "X-Proxy-User": be["proxy_user"],
-        "X-Proxy-Pass": be["proxy_pass"],
-        "X-Display-User": display_user,
-        "X-Display-Pass": display_pass,
-        "X-Rewrite-Args": rewrite_args,
-        "X-Host": request.host.split(":")[0],
-        "X-Desired-Ext": DESIRED_EXT,
-    }
-
-    logging.info(
-        "auth 200 mode=user user=%s backend_name=%s backend_port=%s rewrite_len=%s display_user=%s desired_ext=%s",
-        user, be.get("name"), be.get("port"), len(rewrite_args), display_user, DESIRED_EXT
-    )
-    return Response(status=200, headers=headers)
+    # OK → give nginx the upstream + credentials to use
+    resp = Response(status=200)
+    resp.headers["X-Backend"]      = be["base"]
+    resp.headers["X-Basic"]        = _basic_blob(be["proxy_user"], be["proxy_pass"])
+    resp.headers["X-Proxy-User"]   = be["proxy_user"]
+    resp.headers["X-Proxy-Pass"]   = be["proxy_pass"]
+    resp.headers["X-Display-User"] = user
+    return resp
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=APP_PORT)
+    app.run(host="127.0.0.1", port=9100)
