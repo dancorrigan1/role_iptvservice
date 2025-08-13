@@ -49,6 +49,10 @@
 - name: Setup iptv-auth app
   ansible.builtin.include_tasks: auth.yml
 
+- name: "Include firewall tasks (if managed)"
+  ansible.builtin.include_tasks: firewall.yml
+  when: role_iptvservice__manage_firewall | default(true) | bool
+
 - name: Setup iptv-proxy instances
   ansible.builtin.include_tasks: proxy.yml
 

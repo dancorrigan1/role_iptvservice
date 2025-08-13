@@ -1,0 +1,59 @@
+---
+# Compute backend_ports from backends.json if available, else derive from vars.
+- name: "Firewall | Try to read backends.json for ports"
+  ansible.builtin.slurp:
+    path: "{{ role_iptvservice__auth_root | default('/opt/iptv-auth') }}/backends.json"
+  register: __fw_backends_slurp
+  ignore_errors: true
+
+- name: "Firewall | Parse ports from backends.json"
+  ansible.builtin.set_fact:
+    backend_ports: >-
+      {{ ( __fw_backends_slurp.content | default('') | b64decode | from_json )
+         | map(attribute='port') | map('int') | list }}
+  when: __fw_backends_slurp is defined and __fw_backends_slurp.content is defined and __fw_backends_slurp.content|length > 0
+
+# Fallback: derive ports from the count of provider_credentials starting at role_iptvservice__proxy_start_port
+- name: "Firewall | Derive ports from credentials (fallback)"
+  ansible.builtin.set_fact:
+    __fw_total_backends: >-
+      {{ role_iptvservice__credentials
+         | map(attribute='provider_credentials') | map('length') | list | sum }}
+  when: backend_ports is not defined
+
+- name: "Firewall | Build port list (fallback)"
+  ansible.builtin.set_fact:
+    backend_ports: >-
+      {{ query('sequence',
+               'start=' ~ (role_iptvservice__proxy_start_port | int),
+               'count=' ~ (__fw_total_backends | default(0) | int))
+         | map('int') | list }}
+  when: backend_ports is not defined
+
+# Insert ACCEPT first, then LOG. Because 'action: insert' puts the rule at the top,
+# inserting LOG last ensures LOG appears *before* ACCEPT in the chain (so it actually logs).
+- name: "Firewall | ACCEPT tcp to iptv-proxy ports"
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "{{ item }}"
+    jump: ACCEPT
+    state: present
+    action: insert
+  loop: "{{ backend_ports | default([]) }}"
+  when: (backend_ports | length) > 0
+
+- name: "Firewall | LOG non-local hits to iptv-proxy ports"
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "{{ item }}"
+    source: "! {{ role_iptvservice__firewall_local_ip }}/32"
+    jump: LOG
+    log_prefix: "Firewall - IPTV: "
+    state: present
+    action: insert
+  loop: "{{ backend_ports | default([]) }}"
+  when:
+    - (backend_ports | length) > 0
+    - role_iptvservice__firewall_local_ip is defined
