@@ -1,5 +1,10 @@
 [
 {% for b in backend_list %}
-  { "name": "{{ b.name }}", "port": {{ b.port }}, "proxy_user": "{{ b.proxy_user }}", "proxy_pass": "{{ b.proxy_pass }}" }{% if not loop.last %},{% endif %}
+  {
+    "name": "{{ b.name }}",
+    "port": {{ b.port }},
+    "proxy_user": "{{ b.proxy_user }}",
+    "proxy_pass": "{{ b.proxy_pass }}"
+  }{% if not loop.last %},{% endif %}
 {% endfor %}
 ]

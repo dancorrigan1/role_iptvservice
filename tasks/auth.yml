@@ -5,7 +5,6 @@
     group: "{{ role_iptvservice__auth_group }}"
     create_home: no
     system: yes
-  register: __auth_user
 
 - name: Create auth root directory
   ansible.builtin.file:
@@ -69,4 +68,3 @@
     name: iptv-auth.service
     enabled: true
     state: started
-...
