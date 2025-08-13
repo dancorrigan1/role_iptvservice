@@ -19,11 +19,13 @@ server {
     # ---------- Internal auth subrequest ----------
     location = /_auth {
         internal;
-        proxy_pass http://127.0.0.1:9100/auth;
+        # IMPORTANT: keep $is_args$args so /auth receives ?username=&password=
+        proxy_pass http://127.0.0.1:9100/auth$is_args$args;
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";
         proxy_set_header Authorization $http_authorization;   # pass client Basic (or none)
         proxy_set_header X-Original-URI $request_uri;         # exact path the client asked for
+        access_log /var/log/nginx/yiafe_auth_access.log;
     }
 
     # ---------- Player API (login, metadata) ----------
