@@ -45,7 +45,7 @@ def _parse_basic(auth: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
         return None, None
 
 def _extract_userpass() -> Tuple[Optional[str], Optional[str]]:
-    # order: Authorization header, then query args (sent by nginx in subrequest)
+    # Prefer Authorization header (Basic), fallback to query (sent by nginx)
     hu, hp = _parse_basic(request.headers.get("Authorization"))
     qu = request.args.get("username") or request.args.get("user")
     qp = request.args.get("password") or request.args.get("pass")
@@ -78,36 +78,52 @@ except Exception as e:
 
 BACKENDS = []
 for b in RAW_BACKENDS:
-    port = int(b["port"])
-    BACKENDS.append({
-        **b,
-        "base": f"{BACKEND_SCHEME}://{BACKEND_HOST}:{port}",
-    })
+    try:
+        port = int(b["port"])
+        BACKENDS.append({
+            **b,
+            "base": f"{BACKEND_SCHEME}://{BACKEND_HOST}:{port}",
+        })
+    except Exception as e:
+        logging.error("invalid backend entry %r: %s", b, e)
 
 def _auth_core(enforce_live: bool) -> Response:
     user, pw = _extract_userpass()
     logging.info("auth start: enforce_live=%s user=%s", enforce_live, user or "-")
 
-    if not user or user not in USERS:
+    if not user:
+        logging.info("auth fail: missing user")
         return Response(status=401)
 
-    rec = USERS[user]
+    rec = USERS.get(user)
+    if not rec:
+        logging.info("auth fail: unknown user=%s", user)
+        return Response(status=401)
+
     expect = str(rec.get("password", ""))
-    if pw and pw != expect:
+    if pw:
+        if pw != expect:
+            logging.info("auth fail: bad password for user=%s", user)
+            return Response(status=401)
+    else:
+        # Require a password (don’t allow blank)
+        logging.info("auth fail: missing password for user=%s", user)
         return Response(status=401)
 
     if enforce_live and not _safe_bool(rec.get("live", True), True):
-        # tell nginx to 302 the segment to oos.ts
         resp = Response(status=403)
         resp.headers["X-Redirect"] = OOS_REDIRECT_URL
         resp.headers["X-Live-Disabled"] = "1"
+        logging.info("auth live-off redirect for user=%s -> %s", user, OOS_REDIRECT_URL)
         return resp
 
     if not BACKENDS:
+        logging.error("no backends configured")
         return Response(status=503)
 
     be = _map_backend(user, BACKENDS)
     if not be:
+        logging.error("backend mapping failed for user=%s", user)
         return Response(status=503)
 
     resp = Response(status=200)
@@ -116,6 +132,7 @@ def _auth_core(enforce_live: bool) -> Response:
     resp.headers["X-Proxy-User"]   = be["proxy_user"]
     resp.headers["X-Proxy-Pass"]   = be["proxy_pass"]
     resp.headers["X-Display-User"] = user
+    logging.info("auth ok: user=%s backend=%s", user, be.get("name", be["base"]))
     return resp
 
 @app.route("/healthz", methods=["GET"])
@@ -127,7 +144,7 @@ def healthz():
 def auth():
     return _auth_core(enforce_live=False)
 
-# used only for channel segment (.ts/.m3u8) requests
+# used only for channel segments (.ts/.m3u8)
 @app.route("/auth_live", methods=["GET"])
 def auth_live():
     return _auth_core(enforce_live=True)
