@@ -30,7 +30,7 @@ server {
     access_log /var/log/nginx/yiafe_access.log;
     error_log  /var/log/nginx/yiafe_error.log;
 
-    # If auth_request returns 401/403, come here; 403 may carry X-Redirect (live off → /oos.ts)
+    # If auth_request returns 401/403, come here; 403 may carry X-Redirect (live off → /oos.ts or your external URL)
     error_page 401 403 = @auth_fail;
 
     {% if role_iptvservice__enable_ua_filter | bool %}
@@ -55,7 +55,7 @@ server {
         proxy_set_header X-Q-Pass     $saved_pass;
         proxy_set_header X-Path-User  $path_user;
         proxy_set_header X-Orig-Args  $saved_args;
-        proxy_set_header X-Req-URI    $request_uri;   # NEW: lets app know if this was /live/...ts
+        proxy_set_header X-Req-URI    $request_uri;   # lets app know if this was /live/...ts
 
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";
@@ -70,12 +70,13 @@ server {
 
         auth_request /_auth;
 
-        auth_request_set $backend      $upstream_http_x_backend;
-        auth_request_set $basic        $upstream_http_x_basic;
-        auth_request_set $proxy_user   $upstream_http_x_proxy_user;
-        auth_request_set $proxy_pass   $upstream_http_x_proxy_pass;
-        auth_request_set $display_user $upstream_http_x_display_user;
-        auth_request_set $display_pass $upstream_http_x_display_pass;
+        auth_request_set $backend       $upstream_http_x_backend;
+        auth_request_set $basic         $upstream_http_x_basic;
+        auth_request_set $proxy_user    $upstream_http_x_proxy_user;
+        auth_request_set $proxy_pass    $upstream_http_x_proxy_pass;
+        auth_request_set $display_user  $upstream_http_x_display_user;
+        auth_request_set $display_pass  $upstream_http_x_display_pass;
+        auth_request_set $auth_redirect $upstream_http_x_redirect;   # NEW: capture redirect hint
 
         proxy_pass $backend/$1/$proxy_user/$proxy_pass/$4;
 
@@ -114,10 +115,11 @@ server {
 
         auth_request /_auth;
 
-        auth_request_set $backend    $upstream_http_x_backend;
-        auth_request_set $basic      $upstream_http_x_basic;
-        auth_request_set $proxy_user $upstream_http_x_proxy_user;
-        auth_request_set $proxy_pass $upstream_http_x_proxy_pass;
+        auth_request_set $backend       $upstream_http_x_backend;
+        auth_request_set $basic         $upstream_http_x_basic;
+        auth_request_set $proxy_user    $upstream_http_x_proxy_user;
+        auth_request_set $proxy_pass    $upstream_http_x_proxy_pass;
+        auth_request_set $auth_redirect $upstream_http_x_redirect;   # NEW
 
         proxy_pass $backend/$1/$proxy_user/$proxy_pass/$4;
 
@@ -149,15 +151,16 @@ server {
 
         auth_request /_auth;
 
-        auth_request_set $backend      $upstream_http_x_backend;
-        auth_request_set $basic        $upstream_http_x_basic;
-        auth_request_set $fwd_args     $upstream_http_x_rewrite_args;
+        auth_request_set $backend       $upstream_http_x_backend;
+        auth_request_set $basic         $upstream_http_x_basic;
+        auth_request_set $fwd_args      $upstream_http_x_rewrite_args;
 
         auth_request_set $proxy_user    $upstream_http_x_proxy_user;
         auth_request_set $proxy_pass    $upstream_http_x_proxy_pass;
         auth_request_set $display_user  $upstream_http_x_display_user;
         auth_request_set $display_pass  $upstream_http_x_display_pass;
         auth_request_set $desired_ext   $upstream_http_x_desired_ext;
+        auth_request_set $auth_redirect $upstream_http_x_redirect;   # NEW
 
         proxy_pass $backend$api_uri_stripped?$fwd_args;
 
@@ -205,8 +208,8 @@ server {
 
     # Auth failure handler: turn app’s 403 + X-Redirect into a 302
     location @auth_fail {
-        if ($upstream_http_x_redirect != "") {
-            return 302 $upstream_http_x_redirect;
+        if ($auth_redirect != "") {
+            return 302 $auth_redirect;
         }
         return 401;
     }
