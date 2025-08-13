@@ -1,42 +1,34 @@
 #!/usr/bin/env python3
-import os, json, base64, logging, hashlib, re
+import os, json, base64, logging, hashlib
 from typing import Any, Dict, Optional, Tuple
-from urllib.parse import urlsplit, parse_qs
 from flask import Flask, request, Response
 
-AUTH_ROOT    = os.environ.get("IPTV_AUTH_ROOT", "/opt/iptv-auth")
-USERS_JSON   = os.path.join(AUTH_ROOT, "users.json")
-BACKENDS_JSON= os.path.join(AUTH_ROOT, "backends.json")
+AUTH_ROOT     = os.environ.get("IPTV_AUTH_ROOT", "/opt/iptv-auth")
+USERS_JSON    = os.path.join(AUTH_ROOT, "users.json")
+BACKENDS_JSON = os.path.join(AUTH_ROOT, "backends.json")
 
-# Where to send viewers if live==false and they request a channel segment:
 OOS_REDIRECT_URL = os.environ.get(
     "IPTV_AUTH_OOS_URL",
     "https://{{ (role_iptvservice__iptv_hostname | first) | trim }}/oos.ts"
 )
 
-# iptv-proxy runs locally on these ports
 BACKEND_HOST   = os.environ.get("IPTV_PROXY_HOST", "127.0.0.1")
 BACKEND_SCHEME = os.environ.get("IPTV_PROXY_SCHEME", "http")
 
 LOG_LEVEL = os.environ.get("IPTV_AUTH_LOG", "{{ (role_iptvservice__auth_log_level | default('INFO')) | upper }}").upper()
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
-    format="%(asctime)s %(levelname)s %(message)s",
-)
+logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO),
+                    format="%(asctime)s %(levelname)s %(message)s")
 app = Flask(__name__)
-
-# Treat only real live segments as “channel playback” (.ts). Supports optional /USERNAME prefix.
-CHAN_RE = re.compile(r"^/(?:[^/]+/)?live/[^/]+/[^/]+/\d+\.ts(?:\?.*)?$", re.IGNORECASE)
 
 def _load_json(path: str) -> Any:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def _safe_bool(v: Any, default: bool = True) -> bool:
+def _safe_bool(v: Any, default: bool=True) -> bool:
     if isinstance(v, bool): return v
     if v is None: return default
     s = str(v).strip().lower()
-    if s in ("1","true","yes","y","on"): return True
+    if s in ("1","true","yes","y","on"):  return True
     if s in ("0","false","no","n","off"): return False
     return default
 
@@ -52,42 +44,17 @@ def _parse_basic(auth: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     except Exception:
         return None, None
 
-def _extract_creds() -> Tuple[Optional[str], Optional[str], str]:
-    """
-    Pull creds from (in order):
-      1) Authorization: Basic ...
-      2) Subrequest querystring (usually empty for auth subreq)
-      3) X-Original-URI header’s querystring (the real client URL with args)
-    Return (user, pass, original_path_only) for logging + .ts gating.
-    """
-    # 1) Basic from client
+def _extract_userpass() -> Tuple[Optional[str], Optional[str]]:
+    # order: Authorization header, then query args (sent by nginx in subrequest)
     hu, hp = _parse_basic(request.headers.get("Authorization"))
-
-    # 2) Subrequest query (normally empty because we call /_auth without args)
     qu = request.args.get("username") or request.args.get("user")
     qp = request.args.get("password") or request.args.get("pass")
-
-    # 3) If still missing, parse from X-Original-URI (set by nginx)
-    orig = request.headers.get("X-Original-URI") or request.full_path or request.path
-    # original path (no query) so we can test CHAN_RE
-    path_only = orig.split("?", 1)[0]
-
-    if not qu or not qp:
-        try:
-            parts = urlsplit(orig)
-            q = parse_qs(parts.query or "")
-            qu = qu or (q.get("username", q.get("user", [None]))[0])
-            qp = qp or (q.get("password", q.get("pass", [None]))[0])
-        except Exception:
-            pass
-
-    user = hu or qu
-    pw   = hp or qp
-    return user, pw, path_only
+    return (hu or qu, hp or qp)
 
 def _map_backend(user: str, backends: list[Dict[str, Any]]) -> Dict[str, Any]:
-    # Stable hash → consistent backend for a user across runs
-    if len(backends) <= 1:
+    if not backends:
+        return {}
+    if len(backends) == 1:
         return backends[0]
     h = hashlib.md5(user.encode("utf-8")).hexdigest()
     idx = int(h, 16) % len(backends)
@@ -96,7 +63,7 @@ def _map_backend(user: str, backends: list[Dict[str, Any]]) -> Dict[str, Any]:
 def _basic_blob(u: str, p: str) -> str:
     return "Basic " + base64.b64encode(f"{u}:{p}".encode("utf-8")).decode("ascii")
 
-# Load config (once)
+# ---- load config once ----
 try:
     USERS = _load_json(USERS_JSON)
 except Exception as e:
@@ -117,28 +84,20 @@ for b in RAW_BACKENDS:
         "base": f"{BACKEND_SCHEME}://{BACKEND_HOST}:{port}",
     })
 
-@app.route("/healthz", methods=["GET"])
-def healthz():
-    return Response("ok\n", 200, mimetype="text/plain")
-
-@app.route("/auth", methods=["GET"])
-def auth():
-    user, pw, path_only = _extract_creds()
-    logging.info("auth start: user=%s path=%s", user or "-", path_only)
+def _auth_core(enforce_live: bool) -> Response:
+    user, pw = _extract_userpass()
+    logging.info("auth start: enforce_live=%s user=%s", enforce_live, user or "-")
 
     if not user or user not in USERS:
         return Response(status=401)
+
     rec = USERS[user]
-    expect = str(rec.get("password", ""))  # exact match
+    expect = str(rec.get("password", ""))
     if pw and pw != expect:
         return Response(status=401)
 
-    live_on = _safe_bool(rec.get("live", True), True)
-    # vod_on = _safe_bool(rec.get("vod", True), True)  # keep for later gating if desired
-
-    # If live is OFF and this is a real channel segment, ask nginx to 302 the client to OOS.
-    if not live_on and CHAN_RE.match(path_only or ""):
-        logging.info("live disabled for %s -> redirect %s", user, OOS_REDIRECT_URL)
+    if enforce_live and not _safe_bool(rec.get("live", True), True):
+        # tell nginx to 302 the segment to oos.ts
         resp = Response(status=403)
         resp.headers["X-Redirect"] = OOS_REDIRECT_URL
         resp.headers["X-Live-Disabled"] = "1"
@@ -146,9 +105,11 @@ def auth():
 
     if not BACKENDS:
         return Response(status=503)
-    be = _map_backend(user, BACKENDS)
 
-    # OK → give nginx the upstream + credentials to use
+    be = _map_backend(user, BACKENDS)
+    if not be:
+        return Response(status=503)
+
     resp = Response(status=200)
     resp.headers["X-Backend"]      = be["base"]
     resp.headers["X-Basic"]        = _basic_blob(be["proxy_user"], be["proxy_pass"])
@@ -156,6 +117,20 @@ def auth():
     resp.headers["X-Proxy-Pass"]   = be["proxy_pass"]
     resp.headers["X-Display-User"] = user
     return resp
+
+@app.route("/healthz", methods=["GET"])
+def healthz():
+    return Response("ok\n", 200, mimetype="text/plain")
+
+# used for login, metadata, vod etc
+@app.route("/auth", methods=["GET"])
+def auth():
+    return _auth_core(enforce_live=False)
+
+# used only for channel segment (.ts/.m3u8) requests
+@app.route("/auth_live", methods=["GET"])
+def auth_live():
+    return _auth_core(enforce_live=True)
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=9100)
