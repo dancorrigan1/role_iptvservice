@@ -1,0 +1,72 @@
+---
+- name: Ensure iptvauth system user/group
+  ansible.builtin.user:
+    name: "{{ role_iptvservice__auth_user }}"
+    group: "{{ role_iptvservice__auth_group }}"
+    create_home: no
+    system: yes
+  register: __auth_user
+
+- name: Create auth root directory
+  ansible.builtin.file:
+    path: "{{ role_iptvservice__auth_root }}"
+    state: directory
+    owner: "{{ role_iptvservice__auth_user }}"
+    group: "{{ role_iptvservice__auth_group }}"
+    mode: "0755"
+
+- name: Create venv
+  ansible.builtin.command:
+    cmd: "{{ role_iptvservice__auth_python }} -m venv {{ role_iptvservice__auth_venv }}"
+    creates: "{{ role_iptvservice__auth_venv }}/bin/activate"
+
+- name: Install Python deps in venv
+  ansible.builtin.command:
+    cmd: "{{ role_iptvservice__auth_venv }}/bin/pip install --upgrade pip {{ role_iptvservice__python_packages | join(' ') }}"
+  changed_when: false
+
+- name: Render app.py
+  ansible.builtin.template:
+    src: app.py.j2
+    dest: "{{ role_iptvservice__auth_root }}/app.py"
+    owner: "{{ role_iptvservice__auth_user }}"
+    group: "{{ role_iptvservice__auth_group }}"
+    mode: "0644"
+  notify: restart iptv-auth
+
+- name: Render users.json
+  ansible.builtin.template:
+    src: users.json.j2
+    dest: "{{ role_iptvservice__auth_root }}/users.json"
+    owner: "{{ role_iptvservice__auth_user }}"
+    group: "{{ role_iptvservice__auth_group }}"
+    mode: "0640"
+  notify: restart iptv-auth
+
+- name: Render backends.json
+  ansible.builtin.template:
+    src: backends.json.j2
+    dest: "{{ role_iptvservice__auth_root }}/backends.json"
+    owner: "{{ role_iptvservice__auth_user }}"
+    group: "{{ role_iptvservice__auth_group }}"
+    mode: "0640"
+  vars:
+    backend_list: "{{ __backends }}"
+  notify: restart iptv-auth
+
+- name: Install systemd unit for iptv-auth
+  ansible.builtin.template:
+    src: iptv-auth.service.j2
+    dest: /etc/systemd/system/iptv-auth.service
+    mode: "0644"
+
+- name: systemd daemon-reload
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Enable & start iptv-auth
+  ansible.builtin.service:
+    name: iptv-auth.service
+    enabled: true
+    state: started
+...

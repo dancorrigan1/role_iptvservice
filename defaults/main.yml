@@ -1,6 +1,29 @@
 ---
-role_iptvservice__iptv_proxy_path: "/usr/bin/iptv-proxy"
-role_iptvservice__nginx_template: "nginx-site.conf.j2"
-role_iptvservice__nginx_conf: "/etc/nginx/sites-available/{{ role_iptvservice__iptv_hostname | first }}.conf"
-role_iptvservice__nginx_log_prev_day: "/var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_access.log.1"
+# Where to place files / run services
+role_iptvservice__auth_root: /opt/iptv-auth
+role_iptvservice__auth_port: 9100
+role_iptvservice__auth_user: iptvauth
+role_iptvservice__auth_group: iptvauth
+
+role_iptvservice__proxy_env_dir: /etc/iptv-proxy
+role_iptvservice__proxy_user: root          # matches how you currently run iptv-proxy
+role_iptvservice__proxy_group: root
+role_iptvservice__proxy_hostname_prefix: "iptv."  # used for iptv-proxy --hostname
+
+# Optional control flags
+role_iptvservice__nginx_site_name: "yiafe.com"
+role_iptvservice__enable_ua_filter: false   # honor role_iptvservice__allowed_user_agents
+role_iptvservice__manage_firewall: false    # never touch firewall by default
+
+# Streaming defaults
+role_iptvservice__desired_ext: ts           # what we inject when container_extension is empty
+
+# Packages
+role_iptvservice__auth_python: /usr/bin/python3
+role_iptvservice__auth_venv: "{{ role_iptvservice__auth_root }}/venv"
+role_iptvservice__python_packages:
+  - flask
+
+# Stable, deterministic port assignment:
+# starting from role_iptvservice__proxy_start_port and increment by 1 for each upstream account
 ...
