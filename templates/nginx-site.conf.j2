@@ -28,15 +28,6 @@ server {
         proxy_set_header X-Original-URI $request_uri;
     }
 
-    # ---- Helper: JSON rewrite snippet (macro-like) ----
-    # We duplicate the sub_filter block in the four API locations.
-    # Keeps clients using the same host they hit, and front-end ports.
-    # NOTE: sub_filter is literal, so we enumerate possible backend ports.
-    #       Also cover url with and without :PORT.
-    # BEGIN_JSON_REWRITE
-    map "" $dummy_json_rewrite { default ""; }
-    # END_JSON_REWRITE
-
     # ---------- Player API (login, metadata) ----------
     location = /player_api.php {
         auth_request /_auth;
@@ -50,7 +41,9 @@ server {
         proxy_http_version 1.1; proxy_set_header Connection ""; proxy_buffering off;
 
         # ---- JSON rewriting ----
-        proxy_set_header Accept-Encoding "";  gunzip on;  sub_filter_once off;
+        proxy_set_header Accept-Encoding "";
+        gunzip on;
+        sub_filter_once off;
         sub_filter_types application/json application/octet-stream text/plain text/*;
 
         # Force url to current host (with/without :PORT in backend JSON)
@@ -89,8 +82,10 @@ server {
         proxy_set_header Host $host;
         proxy_http_version 1.1; proxy_set_header Connection ""; proxy_buffering off;
 
-        # ---- JSON rewriting (same as player_api) ----
-        proxy_set_header Accept-Encoding "";  gunzip on;  sub_filter_once off;
+        # ---- JSON rewriting ----
+        proxy_set_header Accept-Encoding "";
+        gunzip on;
+        sub_filter_once off;
         sub_filter_types application/json application/octet-stream text/plain text/*;
         sub_filter "\"url\":\"http://{{ backend_host }}\""        "\"url\":\"$scheme://$host\"";
         sub_filter "\"url\":\"https://{{ backend_host }}\""       "\"url\":\"$scheme://$host\"";
@@ -115,7 +110,6 @@ server {
         auth_request_set $basic          $upstream_http_x_basic;
         auth_request_set $auth_redirect  $upstream_http_x_redirect;
 
-        # Preserve the rest of the path after the leading /USERNAME
         if ($request_uri ~ "^/[^/]+(/player_api\.php.*)$") { set $rest $1; }
         proxy_pass $backend$rest;
 
@@ -123,8 +117,10 @@ server {
         proxy_set_header Host $host;
         proxy_http_version 1.1; proxy_set_header Connection ""; proxy_buffering off;
 
-        # ---- JSON rewriting (same rules) ----
-        proxy_set_header Accept-Encoding "";  gunzip on;  sub_filter_once off;
+        # ---- JSON rewriting ----
+        proxy_set_header Accept-Encoding "";
+        gunzip on;
+        sub_filter_once off;
         sub_filter_types application/json application/octet-stream text/plain text/*;
         sub_filter "\"url\":\"http://{{ backend_host }}\""        "\"url\":\"$scheme://$host\"";
         sub_filter "\"url\":\"https://{{ backend_host }}\""       "\"url\":\"$scheme://$host\"";
@@ -154,7 +150,9 @@ server {
         proxy_http_version 1.1; proxy_set_header Connection ""; proxy_buffering off;
 
         # ---- JSON rewriting ----
-        proxy_set_header Accept-Encoding "";  gunzip on;  sub_filter_once off;
+        proxy_set_header Accept-Encoding "";
+        gunzip on;
+        sub_filter_once off;
         sub_filter_types application/json application/octet-stream text/plain text/*;
         sub_filter "\"url\":\"http://{{ backend_host }}\""        "\"url\":\"$scheme://$host\"";
         sub_filter "\"url\":\"https://{{ backend_host }}\""       "\"url\":\"$scheme://$host\"";
