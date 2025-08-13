@@ -30,9 +30,6 @@ server {
     access_log /var/log/nginx/yiafe_access.log;
     error_log  /var/log/nginx/yiafe_error.log;
 
-    # If auth_request returns 401/403, come here; 403 may carry X-Redirect (live off → /oos.ts)
-    error_page 401 403 = @auth_fail;
-
     {% if role_iptvservice__enable_ua_filter | bool %}
     if ($ua_ok = 0) { return 403; }
     {% endif %}
@@ -48,15 +45,11 @@ server {
     location = /_auth {
         internal;
         proxy_pass http://127.0.0.1:{{ role_iptvservice__auth_port }}/auth;
-
-        # Pass client creds/derived info
         proxy_set_header Authorization $http_authorization;
         proxy_set_header X-Q-User     $saved_user;
         proxy_set_header X-Q-Pass     $saved_pass;
         proxy_set_header X-Path-User  $path_user;
         proxy_set_header X-Orig-Args  $saved_args;
-        proxy_set_header X-Req-URI    $request_uri;   # NEW: lets app know if this was /live/...ts
-
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";
         access_log /var/log/nginx/yiafe_auth_access.log;
@@ -88,11 +81,12 @@ server {
         sub_filter_once off;
         sub_filter_types application/x-mpegURL application/vnd.apple.mpegurl application/octet-stream text/plain text/*;
 
-        sub_filter "/live/$proxy_user/$proxy_pass/"      "/live/$display_user/$display_pass/";
-        sub_filter "/series/$proxy_user/$proxy_pass/"    "/series/$display_user/$display_pass/";
-        sub_filter "/movie/$proxy_user/$proxy_pass/"     "/movie/$display_user/$display_pass/";
+        sub_filter "/live/$proxy_user/$proxy_pass/"     "/live/$display_user/$display_pass/";
+        sub_filter "/series/$proxy_user/$proxy_pass/"   "/series/$display_user/$display_pass/";
+        sub_filter "/movie/$proxy_user/$proxy_pass/"    "/movie/$display_user/$display_pass/";
         sub_filter "/timeshift/$proxy_user/$proxy_pass/" "/timeshift/$display_user/$display_pass/";
 
+        # Replace absolute backend URLs with relative
         {% for port in backend_ports %}
         sub_filter "http://{{ 'iptv.' + (role_iptvservice__iptv_hostname|first) }}:{{ port }}/" "/";
         sub_filter "http://{{ (role_iptvservice__iptv_hostname|first) }}:{{ port }}/" "/";
@@ -186,6 +180,7 @@ server {
         sub_filter "\"url\":\"iptv.{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"$host\"";
         sub_filter "\"url\":\"{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"$host\"";
 
+        # Force protocol & ports (handle numeric and string forms)
         {% for port in backend_ports %}
         sub_filter "\"port\":{{ port }}" "\"port\":80";
         sub_filter "\"port\":\"{{ port }}\"" "\"port\":\"80\"";
@@ -201,13 +196,5 @@ server {
         proxy_request_buffering off;
         proxy_read_timeout 1h;
         send_timeout 1h;
-    }
-
-    # Auth failure handler: turn app’s 403 + X-Redirect into a 302
-    location @auth_fail {
-        if ($upstream_http_x_redirect != "") {
-            return 302 $upstream_http_x_redirect;
-        }
-        return 401;
     }
 }

@@ -3,14 +3,22 @@ import base64
 import json
 import logging
 import os
+import re
 from flask import Flask, request, Response
 
-APP_PORT = {{ role_iptvservice__auth_port }}
-AUTH_ROOT = "{{ role_iptvservice__auth_root }}"
+APP_PORT   = {{ role_iptvservice__auth_port }}
+AUTH_ROOT  = "{{ role_iptvservice__auth_root }}"
 USERS_PATH = os.path.join(AUTH_ROOT, "users.json")
 BACKENDS_PATH = os.path.join(AUTH_ROOT, "backends.json")
 
 DESIRED_EXT = "{{ role_iptvservice__desired_ext }}"
+# Where to send viewers if live==false and they request a channel segment:
+OOS_URL = {{ (role_iptvservice__oos_url | default('https://' + (role_iptvservice__iptv_hostname | first) + '/oos.ts')) | tojson }}
+
+# Match real channel **segments** (only .ts), with or without /USERNAME prefix:
+#   /live/<u>/<p>/<id>.ts
+#   /<USERNAME>/live/<u>/<p>/<id>.ts
+CHAN_TS_RE = re.compile(r"^/(?:[^/]+/)?live/[^/]+/[^/]+/\d+\.ts(?:\?.*)?$", re.IGNORECASE)
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -22,7 +30,7 @@ def load_json(path, default):
     except Exception:
         return default
 
-USERS = load_json(USERS_PATH, {})
+USERS    = load_json(USERS_PATH, {})
 BACKENDS = load_json(BACKENDS_PATH, [])
 
 def pick_backend_for_user(username: str):
@@ -42,88 +50,90 @@ def parse_basic(auth_header: str):
     except Exception:
         return (None, None)
 
+def truthy(v, default=True):
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return default
+    s = str(v).strip().lower()
+    if s in ("1","true","yes","y","on"):  return True
+    if s in ("0","false","no","n","off"): return False
+    return default
+
 @app.route("/healthz")
 def healthz():
     return "ok", 200
 
 @app.route("/auth")
 def auth():
-    # inputs from nginx
+    # Inputs from nginx (set in /_auth)
     x_user = request.headers.get("X-Q-User", "").strip()
     x_pass = request.headers.get("X-Q-Pass", "").strip()
-    x_path = request.headers.get("X-Path-User", "").strip()
+    x_path_user = request.headers.get("X-Path-User", "").strip()
+    orig_args = request.headers.get("X-Orig-Args", "")
+    req_uri   = request.headers.get("X-Req-URI", "")  # full request_uri (so we can detect /live/...ts)
 
-    # query fallback
+    # Query fallback
     q_user = request.args.get("username", "").strip()
     q_pass = request.args.get("password", "").strip()
 
-    # basic auth
+    # Basic auth
     b_user, b_pass = parse_basic(request.headers.get("Authorization"))
 
-    # pick first present: basic > query > path
-    user = next((x for x in [b_user, q_user, x_user, x_path] if x), "")
+    # pick first present: basic > query > header > path
+    user   = next((x for x in [b_user, q_user, x_user, x_path_user] if x), "")
     passwd = next((x for x in [b_pass, q_pass, x_pass] if x), "")
 
-    has_basic = bool(b_user)
-    q_path = request.args.get("path_user", "").strip()
-    src = "basic" if has_basic else ("query" if q_user else ("header" if x_user else ("path-header" if x_path else "none")))
-
-    # validate
-    ok = False
-    display_user = "-"
-    display_pass = "-"
-    if user and user in USERS:
-        stored = USERS[user]
-        if passwd == stored.get("password"):
-            ok = True
-            display_user = user
-            display_pass = passwd
-
-    if not ok:
+    # validate user
+    if not user or user not in USERS:
         logging.info("auth 401 for user=%s", user or "-")
         return Response(status=401)
+    stored = USERS[user]
+    if passwd != str(stored.get("password", "")):
+        logging.info("auth 401 bad pass for user=%s", user)
+        return Response(status=401)
 
-    # pick backend and emit headers nginx needs
+    # If live==false and this exact request is for a .ts channel segment, instruct nginx to 302 to OOS_URL.
+    live_on = truthy(stored.get("live", True), True)
+    if (not live_on) and req_uri and CHAN_TS_RE.match(req_uri):
+        logging.info("live disabled for %s -> redirect %s (req=%s)", user, OOS_URL, req_uri)
+        resp = Response(status=403)                   # auth_request sees 403 → we convert to 302 in nginx
+        resp.headers["X-Redirect"] = OOS_URL          # nginx @auth_fail reads this
+        return resp
+
+    # choose backend and emit headers
     be = pick_backend_for_user(user)
     if not be:
         logging.info("auth 503 no backends")
         return Response(status=503)
 
     backend = f"http://127.0.0.1:{be['port']}"
-    # Build rewrite args: keep original args but ensure username/password are backend creds for upstream
-    # (client still sees display creds via nginx sub_filter)
-    # Preserve any other args client sent
-    orig = request.headers.get("X-Orig-Args", "")
-    # Force upstream creds:
-    pieces = []
-    extra = []
-    if orig:
-        # strip existing username/password from orig
-        for kv in orig.split("&"):
-            if kv.startswith("username=") or kv.startswith("password="):
+
+    # Build forward args for upstream: keep client's args but force upstream creds
+    extras = []
+    if orig_args:
+        for kv in orig_args.split("&"):
+            if kv.startswith("username=") or kv.startswith("password=") or kv == "":
                 continue
-            if kv != "":
-                extra.append(kv)
-    extra.append(f"username={be['proxy_user']}")
-    extra.append(f"password={be['proxy_pass']}")
-    rewrite_args = "&".join(extra)
+            extras.append(kv)
+    extras.append(f"username={be['proxy_user']}")
+    extras.append(f"password={be['proxy_pass']}")
+    rewrite_args = "&".join(extras)
 
     headers = {
         "X-Backend": backend,
         "X-Basic": "Basic " + base64.b64encode(f"{be['proxy_user']}:{be['proxy_pass']}".encode()).decode(),
         "X-Proxy-User": be["proxy_user"],
         "X-Proxy-Pass": be["proxy_pass"],
-        "X-Display-User": display_user,
-        "X-Display-Pass": display_pass,
+        "X-Display-User": user,
+        "X-Display-Pass": passwd,
         "X-Rewrite-Args": rewrite_args,
         "X-Host": request.host.split(":")[0],
         "X-Desired-Ext": DESIRED_EXT,
     }
 
-    logging.info(
-        "auth 200 mode=user user=%s backend_name=%s backend_port=%s rewrite_len=%s display_user=%s desired_ext=%s",
-        user, be.get("name"), be.get("port"), len(rewrite_args), display_user, DESIRED_EXT
-    )
+    logging.info("auth 200 mode=user user=%s backend=%s port=%s live=%s req=%s",
+                 user, be.get("name"), be.get("port"), live_on, req_uri or "-")
     return Response(status=200, headers=headers)
 
 if __name__ == "__main__":

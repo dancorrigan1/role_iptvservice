@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+import base64
+import json
+import logging
+import os
+from flask import Flask, request, Response
+
+APP_PORT = {{ role_iptvservice__auth_port }}
+AUTH_ROOT = "{{ role_iptvservice__auth_root }}"
+USERS_PATH = os.path.join(AUTH_ROOT, "users.json")
+BACKENDS_PATH = os.path.join(AUTH_ROOT, "backends.json")
+
+DESIRED_EXT = "{{ role_iptvservice__desired_ext }}"
+
+app = Flask(__name__)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+def load_json(path, default):
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+USERS = load_json(USERS_PATH, {})
+BACKENDS = load_json(BACKENDS_PATH, [])
+
+def pick_backend_for_user(username: str):
+    if not BACKENDS:
+        return None
+    # Stable spread: hash username → index
+    h = sum(map(ord, username)) if username else 0
+    return BACKENDS[h % len(BACKENDS)]
+
+def parse_basic(auth_header: str):
+    if not auth_header or not auth_header.lower().startswith("basic "):
+        return (None, None)
+    try:
+        raw = base64.b64decode(auth_header.split(None, 1)[1]).decode("utf-8")
+        u, p = raw.split(":", 1)
+        return (u, p)
+    except Exception:
+        return (None, None)
+
+@app.route("/healthz")
+def healthz():
+    return "ok", 200
+
+@app.route("/auth")
+def auth():
+    # inputs from nginx
+    x_user = request.headers.get("X-Q-User", "").strip()
+    x_pass = request.headers.get("X-Q-Pass", "").strip()
+    x_path = request.headers.get("X-Path-User", "").strip()
+
+    # query fallback
+    q_user = request.args.get("username", "").strip()
+    q_pass = request.args.get("password", "").strip()
+
+    # basic auth
+    b_user, b_pass = parse_basic(request.headers.get("Authorization"))
+
+    # pick first present: basic > query > path
+    user = next((x for x in [b_user, q_user, x_user, x_path] if x), "")
+    passwd = next((x for x in [b_pass, q_pass, x_pass] if x), "")
+
+    has_basic = bool(b_user)
+    q_path = request.args.get("path_user", "").strip()
+    src = "basic" if has_basic else ("query" if q_user else ("header" if x_user else ("path-header" if x_path else "none")))
+
+    # validate
+    ok = False
+    display_user = "-"
+    display_pass = "-"
+    if user and user in USERS:
+        stored = USERS[user]
+        if passwd == stored.get("password"):
+            ok = True
+            display_user = user
+            display_pass = passwd
+
+    if not ok:
+        logging.info("auth 401 for user=%s", user or "-")
+        return Response(status=401)
+
+    # pick backend and emit headers nginx needs
+    be = pick_backend_for_user(user)
+    if not be:
+        logging.info("auth 503 no backends")
+        return Response(status=503)
+
+    backend = f"http://127.0.0.1:{be['port']}"
+    # Build rewrite args: keep original args but ensure username/password are backend creds for upstream
+    # (client still sees display creds via nginx sub_filter)
+    # Preserve any other args client sent
+    orig = request.headers.get("X-Orig-Args", "")
+    # Force upstream creds:
+    pieces = []
+    extra = []
+    if orig:
+        # strip existing username/password from orig
+        for kv in orig.split("&"):
+            if kv.startswith("username=") or kv.startswith("password="):
+                continue
+            if kv != "":
+                extra.append(kv)
+    extra.append(f"username={be['proxy_user']}")
+    extra.append(f"password={be['proxy_pass']}")
+    rewrite_args = "&".join(extra)
+
+    headers = {
+        "X-Backend": backend,
+        "X-Basic": "Basic " + base64.b64encode(f"{be['proxy_user']}:{be['proxy_pass']}".encode()).decode(),
+        "X-Proxy-User": be["proxy_user"],
+        "X-Proxy-Pass": be["proxy_pass"],
+        "X-Display-User": display_user,
+        "X-Display-Pass": display_pass,
+        "X-Rewrite-Args": rewrite_args,
+        "X-Host": request.host.split(":")[0],
+        "X-Desired-Ext": DESIRED_EXT,
+    }
+
+    logging.info(
+        "auth 200 mode=user user=%s backend_name=%s backend_port=%s rewrite_len=%s display_user=%s desired_ext=%s",
+        user, be.get("name"), be.get("port"), len(rewrite_args), display_user, DESIRED_EXT
+    )
+    return Response(status=200, headers=headers)
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=APP_PORT)
