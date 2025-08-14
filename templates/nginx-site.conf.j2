@@ -112,7 +112,6 @@ server {
         sub_filter "/timeshift/$proxy_user/$proxy_pass/" "/timeshift/$display_user/$display_pass/";
 
         {% for port in backend_ports %}
-        sub_filter "http://{{ 'iptv.' + (role_iptvservice__iptv_hostname|first) }}:{{ port }}/" "/";
         sub_filter "http://{{ (role_iptvservice__iptv_hostname|first) }}:{{ port }}/" "/";
         {% endfor %}
 
@@ -199,14 +198,10 @@ server {
         sub_filter "\"container_extension\":null"  "\"container_extension\":\"$desired_ext\"";
 
         {% for port in backend_ports %}
-        sub_filter "http://{{ 'iptv.' + (role_iptvservice__iptv_hostname|first) }}:{{ port }}/" "http://$host/";
         sub_filter "http://{{ (role_iptvservice__iptv_hostname|first) }}:{{ port }}/" "http://$host/";
         {% endfor %}
-        sub_filter "\"url\":\"http://iptv.{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"http://$host\"";
-        sub_filter "\"url\":\"https://iptv.{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"http://$host\"";
         sub_filter "\"url\":\"http://{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"http://$host\"";
         sub_filter "\"url\":\"https://{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"http://$host\"";
-        sub_filter "\"url\":\"iptv.{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"$host\"";
         sub_filter "\"url\":\"{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"$host\"";
 
         {% for port in backend_ports %}
