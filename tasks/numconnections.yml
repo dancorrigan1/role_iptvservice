@@ -1,112 +1,126 @@
 ---
-- name: "Number Connections | Gather facts on listening ports"
+# Number Connections — detect overloaded upstreams and quarantine them
+
+- name: "Number Connections | Gather facts on sockets"
   community.general.listen_ports_facts:
     include_non_listening: true
 
-- name: "Number Connections | Generate summary of etv accounts and ports"
+- name: "Number Connections | Build overload summary from __backends"
   ansible.builtin.set_fact:
     __ports_summary: >-
-      {%- set __ports_summary = [] -%}
-      {%- set xtream_account = 'xtream_account' -%}
-      {%- set portstotal = 'portstotal' -%}
-      {%- set allports = 'allports' -%}
-      {%- for account in __proxy_users | map(attribute='xtream_account') | unique -%}
-      {%- set __total = namespace(value=0) -%}
-        {%- set account_ports = __proxy_users | selectattr('xtream_account', 'equalto', account) | map(attribute='proxy_port') -%}
-        {%- for port in account_ports -%}
-          {%- set __est_ports = (ansible_facts.tcp_listen
-            | selectattr('state', 'equalto', 'ESTABLISHED')
-            | selectattr('name', 'equalto', 'iptv-proxy')
-            | selectattr('address', 'equalto', role_iptvservice__firewall_local_ip)
-            | rejectattr('foreign_address', 'match', role_iptvservice__firewall_local_ip)
-            | selectattr('port', 'equalto', port)) | length -%}
-          {%- set __total.value = __total.value + __est_ports -%}
-        {%- endfor -%}
-        {%- set item_dict = {
-          xtream_account: account,
-          portstotal: __total.value,
-          allports: account_ports}
-        -%}
-        {%- set _ = __ports_summary.append(item_dict) if __total.value >= role_iptvservice__max_connections -%}
+      {%- set out = [] -%}
+      {%- set maxc = (role_iptvservice__max_connections | int) -%}
+      {%- set lip  = role_iptvservice__firewall_local_ip -%}
+      {%- for be in __backends -%}
+        {%- set conns = (
+          ansible_facts.tcp_listen
+          | selectattr('state', 'equalto', 'ESTABLISHED')
+          | selectattr('name',  'equalto', 'iptv-proxy')
+          | selectattr('address','equalto', lip)
+          | rejectattr('foreign_address', 'match', lip)
+          | selectattr('port',   'equalto', be.port)
+          | list
+        ) | length -%}
+        {%- if conns >= maxc -%}
+          {%- set _ = out.append({
+            'provider': be.provider,
+            'account':  be.account,
+            'port':     be.port,
+            'established': conns
+          }) -%}
+        {%- endif -%}
       {%- endfor -%}
-      {{ __ports_summary }}
+      {{ out }}
 
-- name: "Number Connections | When Overloaded accounts are found"
-  when: __ports_summary | length >= 1
+- name: "Number Connections | When overloaded accounts are found"
+  when: (__ports_summary | length) > 0
   block:
-    - name: "Number Connections | Remove all upstreams for overloaded account"
-      ansible.builtin.replace:
-        path: "{{ role_iptvservice__nginx_conf }}"
-        regexp: '^(\s+server.*{{ item.xtream_account }}.*)$'
-        replace: '# \1'
-      become: true
-      loop: "{{ __ports_summary }}"
-      loop_control:
-        label: >-
-          Removing upstream for Account '{{ item.xtream_account }}' from NGINX Config ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
-        index_var: __my_idx
-        extended: true
-        extended_allitems: false
-      notify: Reload nginx
 
-    - name: "Number Connections | Remove upstream firewall ACCEPT rule for overloaded account"
+    - name: "Quarantine | Remove ACCEPT rule for overloaded port(s)"
       ansible.builtin.iptables:
         chain: INPUT
         protocol: tcp
-        destination_port: "{{ item.1 }}"
+        destination_port: "{{ item.port }}"
         jump: ACCEPT
         state: absent
       become: true
-      loop: "{{ __ports_summary | subelements('allports') }}"
+      loop: "{{ __ports_summary }}"
       loop_control:
-        label: >-
-          Removing Iptables ACCEPT Rule for Account '{{ item.0.xtream_account }}' Port '{{ item.1 }}' ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
-        index_var: __my_idx
-        extended: true
-        extended_allitems: false
+        label: "Del ACCEPT {{ item.account }}:{{ item.port }} ({{ item.established }} conns)"
+      register: __rm_accept
 
-    - name: "Number Connections | Get pids of iptv-proxy processes of overloaded accounts"
-      community.general.pids:
-        pattern: /usr/bin/iptv-proxy --port {{ item.1 }}
+    - name: "Quarantine | Ensure REJECT for overloaded port(s)"
+      ansible.builtin.iptables:
+        chain: INPUT
+        protocol: tcp
+        destination_port: "{{ item.port }}"
+        jump: REJECT
+        reject_with: icmp-port-unreachable
+        state: present
       become: true
-      loop: "{{ __ports_summary | subelements('allports') }}"
+      loop: "{{ __ports_summary }}"
       loop_control:
-        label: >-
-          Getting PID of iptv-proxy process for Account '{{ item.0.xtream_account }}' Port '{{ item.1 }}' ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
-        index_var: __my_idx
-        extended: true
-        extended_allitems: false
+        label: "Add REJECT {{ item.account }}:{{ item.port }}"
+      register: __add_reject
+
+    - name: "Quarantine | (Optional) LOG attempts hitting quarantined port(s)"
+      ansible.builtin.iptables:
+        chain: INPUT
+        protocol: tcp
+        destination_port: "{{ item.port }}"
+        jump: LOG
+        log_prefix: "Firewall - IPTV QUAR: "
+        state: present
+      become: true
+      loop: "{{ __ports_summary }}"
+      loop_control:
+        label: "Add LOG {{ item.account }}:{{ item.port }}"
+      when: (role_iptvservice__manage_firewall | default(true) | bool)
+
+    - name: "Kill | Find iptv-proxy PID for each overloaded port"
+      community.general.pids:
+        pattern: "/usr/bin/iptv-proxy --port {{ item.port }}"
+      become: true
+      loop: "{{ __ports_summary }}"
+      loop_control:
+        label: "Find PID {{ item.account }}:{{ item.port }}"
       register: __proxy_pids
 
-    - name: "Number Connections | Kill pids of iptv-proxy processes of overloaded accounts"
+    - name: "Kill | Terminate overloaded iptv-proxy processes"
       ansible.builtin.command:
-        cmd: kill "{{ item.pids | first }}"
+        cmd: kill "{{ item.pids[0] }}"
       become: true
-      loop: "{{ __proxy_pids.results }}"
+      loop: "{{ __proxy_pids.results | selectattr('pids','defined') | selectattr('pids','length') | list }}"
       loop_control:
-        label: >-
-          Killing iptv-proxy PID {{ item.pids | first }} ({{ __my_idx + 1 }} / {{ ansible_loop.length }})
-        index_var: __my_idx
-        extended: true
-        extended_allitems: false
+        label: "Kill PID {{ item.pids[0] }}"
       changed_when: true
 
-    - name: "Number Connections | Email report of removed upstreams"
+    - name: "Report | Email summary of quarantined upstreams"
       community.general.mail:
         from: "{{ role_iptvservice__email_sender }}"
         to: "{{ role_iptvservice__email_recipients }}"
-        subject: "URGENT: Upstreams removed from IPTV Proxy"
+        subject: "URGENT: IPTV upstreams quarantined (connection cap reached)"
         host: "{{ role_iptvservice__email_server }}"
         port: 25
         secure: never
-        body: "{{ __body }}"
+        body: "{{ __mail_body }}"
       vars:
-        __body: |
-          {% for item in __ports_summary %}
-          Removed IPTV Proxy for Account '{{ item.xtream_account }}' with '{{ item.portstotal }}' Connections
+        __mail_body: |
+          The following upstream accounts were quarantined due to excessive ESTABLISHED connections
+          (threshold: {{ role_iptvservice__max_connections }}):
 
+          {% for it in __ports_summary -%}
+          - Provider: {{ it.provider }}
+            Account:  {{ it.account }}
+            Port:     {{ it.port }}
+            Conns:    {{ it.established }}
           {% endfor %}
-          Port Summary:
 
-          {{ __ports_summary }}
-...
+          Actions taken:
+            • iptables: removed ACCEPT, added REJECT {{ 'and LOG ' if (role_iptvservice__manage_firewall | default(true) | bool) else ''}}for listed ports
+            • Killed iptv-proxy process on each port
+
+- name: "Number Connections | No overloaded accounts"
+  ansible.builtin.debug:
+    msg: "All good — no accounts at or above {{ role_iptvservice__max_connections }} connections."
+  when: (__ports_summary | length) == 0
