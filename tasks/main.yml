@@ -1,6 +1,7 @@
 ---
 - name: Gather facts (for ansible_distribution etc.)
   ansible.builtin.setup:
+  tags: always
 
 # Build __backends deterministically (no funky filters)
 - name: Build backends (stable order & ports)
@@ -26,6 +27,7 @@
         {%- endfor -%}
       {%- endfor -%}
       {{ out }}
+  tags: always
 
 # Merge all proxy_users into a single dict the app will read
 - name: Build users dict
@@ -44,17 +46,35 @@
         {%- endfor -%}
       {%- endfor -%}
       {{ d }}
+  tags: always
 
 # Continue with the rest of the role
 - name: Setup iptv-auth app
   ansible.builtin.include_tasks: auth.yml
+  tags: iptvproxy
 
 - name: "Include firewall tasks (if managed)"
   ansible.builtin.include_tasks: firewall.yml
   when: role_iptvservice__manage_firewall | default(true) | bool
+  tags: iptvproxy
 
 - name: Setup iptv-proxy instances
   ansible.builtin.include_tasks: proxy.yml
+  tags: iptvproxy
 
 - name: Setup nginx site
   ansible.builtin.include_tasks: nginx.yml
+  tags: iptvproxy
+
+- name: "Include upstream_accounts tasks"
+  ansible.builtin.include_tasks: upstream_accounts.yml
+  tags: upstream_accounts
+
+- name: "Include numconnections tasks"
+  ansible.builtin.include_tasks: numconnections.yml
+  tags: numconnections
+
+- name: "Include dailyconnections tasks"
+  ansible.builtin.include_tasks: dailyconnections.yml
+  tags: dailyconnections
+...
