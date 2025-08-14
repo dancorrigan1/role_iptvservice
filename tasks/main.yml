@@ -50,31 +50,52 @@
 
 # Continue with the rest of the role
 - name: Setup iptv-auth app
-  ansible.builtin.include_tasks: auth.yml
+  ansible.builtin.include_tasks:
+    file: auth.yml
+    apply:
+      tags: iptvproxy
   tags: iptvproxy
 
 - name: "Include firewall tasks (if managed)"
-  ansible.builtin.include_tasks: firewall.yml
+  ansible.builtin.include_tasks:
+    file: firewall.yml
+    apply:
+      tags: iptvproxy
   when: role_iptvservice__manage_firewall | default(true) | bool
   tags: iptvproxy
 
 - name: Setup iptv-proxy instances
-  ansible.builtin.include_tasks: proxy.yml
+  ansible.builtin.include_tasks:
+    file: proxy.yml
+    apply:
+      tags: iptvproxy
   tags: iptvproxy
 
 - name: Setup nginx site
-  ansible.builtin.include_tasks: nginx.yml
+  ansible.builtin.include_tasks:
+    file: nginx.yml
+    apply:
+      tags: iptvproxy
   tags: iptvproxy
 
 - name: "Include upstream_accounts tasks"
-  ansible.builtin.include_tasks: upstream_accounts.yml
+  ansible.builtin.include_tasks:
+    file: upstream_accounts.yml
+    apply:
+      tags: iptvproxy
   tags: upstream_accounts
 
 - name: "Include numconnections tasks"
-  ansible.builtin.include_tasks: numconnections.yml
+  ansible.builtin.include_tasks:
+    file: numconnections.yml
+    apply:
+      tags: iptvproxy
   tags: numconnections
 
 - name: "Include dailyconnections tasks"
-  ansible.builtin.include_tasks: dailyconnections.yml
+  ansible.builtin.include_tasks:
+    file: dailyconnections.yml
+    apply:
+      tags: iptvproxy
   tags: dailyconnections
 ...
