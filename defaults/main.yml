@@ -24,6 +24,7 @@ role_iptvservice__auth_venv: "{{ role_iptvservice__auth_root }}/venv"
 role_iptvservice__python_packages:
   - flask
 
+role_iptvservice__oos_url: https://yourwebsite.com/out_of_service.ts
 # Stable, deterministic port assignment:
 # starting from role_iptvservice__proxy_start_port and increment by 1 for each upstream account
 ...

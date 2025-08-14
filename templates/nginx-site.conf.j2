@@ -47,7 +47,7 @@ server {
     # === NO-AUTH OOS CLIP (exact match) ===
     location = /oos.ts {
         # no auth_request here; serve/redirect freely
-        return 302 https://phishbox.phisher1.com/oos.ts;
+        return 302 {{ role_iptvservice__oos_url }} ;
     }
 
     # Internal auth endpoint
