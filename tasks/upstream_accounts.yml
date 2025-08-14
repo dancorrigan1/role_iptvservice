@@ -1,15 +1,30 @@
 ---
-- name: Upstream Accounts | Test Connect to Each Upstream Account
+- name: Upstream Accounts | Test Connect to Each Upstream Account (retry)
   ansible.builtin.uri:
-    url: "{{ item.0.url }}/player_api.php?username={{ item.1.username }}&password={{ item.1.password }}"
+    url: "{{ item.0.url | trim }}/player_api.php?username={{ item.1.username }}&password={{ item.1.password | }}"
     method: GET
-    status_code: 200
+    return_content: false
+    timeout: 10
   loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
   loop_control:
     label: "Checking {{ item.1.account }}:{{ item.1.username }} at {{ item.0.url }}"
   register: __upstream_test_results
-  ignore_errors: true
+  until: (__upstream_test_results.status | default(0)) == 200
+  retries: 5
+  delay: 10
   no_log: false
+
+# - name: Upstream Accounts | Test Connect to Each Upstream Account
+#   ansible.builtin.uri:
+#     url: "{{ item.0.url }}/player_api.php?username={{ item.1.username }}&password={{ item.1.password }}"
+#     method: GET
+#     status_code: 200
+#   loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
+#   loop_control:
+#     label: "Checking {{ item.1.account }}:{{ item.1.username }} at {{ item.0.url }}"
+#   register: __upstream_test_results
+#   ignore_errors: true
+#   no_log: false
 
 - name: Upstream Accounts | Normalize results
   ansible.builtin.set_fact:
