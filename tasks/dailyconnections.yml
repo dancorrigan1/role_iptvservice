@@ -6,13 +6,15 @@
 
 - name: "Daily Connections | Assert that previous day log exists"
   ansible.builtin.assert:
-    that: __previous_day_log_stat.stat.exists | bool
+    that:
+      - __previous_day_log_stat.stat.exists | bool
     msg: "Previous Day Log file {{ role_iptvservice__nginx_log_prev_day }} must exist to run a report."
   when: not __previous_day_log_stat.stat.exists | bool
 
 - name: "Daily Connections | Previous day log exists"
   when: __previous_day_log_stat.stat.exists | bool
   block:
+
     - name: "Daily Connections | Gather minimal facts"
       ansible.builtin.setup:
         gather_subset:
@@ -20,190 +22,208 @@
           - '!min'
           - 'date_time'
 
-    - name: "Daily Connections | Generate summary of iptv accounts and ports"
-      ansible.builtin.set_fact:
-        __ports_summary: >-
-          {%- set __ports_summary = [] -%}
-          {%- set xtream_account = 'xtream_account' -%}
-          {%- set portstotal = 'portstotal' -%}
-          {%- set allports = 'allports' -%}
-          {%- for account in __proxy_users | map(attribute='xtream_account') | unique -%}
-            {%- set account_ports = __proxy_users | selectattr('xtream_account', 'equalto', account) | map(attribute='proxy_port') -%}
-            {%- set item_dict = {
-              xtream_account: account,
-              allports: account_ports}
-            -%}
-            {%- set __ports_summary = __ports_summary.append(item_dict) -%}
-          {%- endfor -%}
-          {{ __ports_summary }}
+    # ------------------------------------------------------------
+    # Helpers we can reuse while parsing the log
+    # ------------------------------------------------------------
 
-    - name: "Daily Connections | Slurp web server log"
+    - name: "Daily Connections | Build port→account/provider maps from __backends"
+      ansible.builtin.set_fact:
+        __port_to_account: >-
+          {%- set d = {} -%}
+          {%- for be in __backends -%}
+            {%- set _ = d.update({ (be.port | string): be.account }) -%}
+          {%- endfor -%}
+          {{ d }}
+        __port_to_provider: >-
+          {%- set d = {} -%}
+          {%- for be in __backends -%}
+            {%- set _ = d.update({ (be.port | string): be.provider }) -%}
+          {%- endfor -%}
+          {{ d }}
+
+    - name: "Daily Connections | Slurp previous day access log"
       ansible.builtin.slurp:
         src: "{{ role_iptvservice__nginx_log_prev_day }}"
       register: __log_prev_day
 
-    - name: "Daily Connections | Decode web server log"
+    - name: "Daily Connections | Decode log"
       ansible.builtin.set_fact:
-        __full_log: "{{ __log_prev_day['content'] | b64decode }}"
+        __full_log: "{{ __log_prev_day.content | b64decode }}"
       no_log: true
 
-    - name: "Daily Connections | Select only iptv matching log lines"
+    # Keep only IPTV-relevant lines (API, EPG, live paths). Do NOT depend on upstream info being logged.
+    - name: "Daily Connections | Filter IPTV lines"
       ansible.builtin.set_fact:
         __iptv_log: >-
-          {{ __full_log.splitlines() | select('search', '(/player_api.php|/xmltv.php|/live)') | select('search', role_iptvservice__firewall_local_ip) }}
-      no_log: true
-
-    - name: "Daily Connections | Unique connected IPs"
-      ansible.builtin.set_fact:
-        __unique_log_lines: >-
-          {%- set unique_ips = [] -%}
-          {%- set unique_lines = [] -%}
-          {%- for line in __iptv_log -%}
-            {%- set ip = line.split()[0] -%}
-            {%- if ip not in unique_ips -%}
-              {%- set unique_ips = unique_ips.append(ip) -%}
-              {%- set unique_lines = unique_lines.append(line) -%}
-            {%- endif -%}
-          {%- endfor -%}
-          {{ unique_lines }}
-      no_log: true
-
-    - name: "Daily Connections | Unique used upstream ports"
-      ansible.builtin.set_fact:
-        __used_ports: "{{ __unique_log_lines | map('regex_search', role_iptvservice__firewall_local_ip + ':[0-9]{5}')
-          | map('regex_search', '[0-9]{5}$') | community.general.counter }}"
-
-    - name: "Daily Connections | Assert there are connections to generate report"
-      ansible.builtin.assert:
-        that: (__used_ports | dict2items | selectattr('key', 'equalto', none) | selectattr('value', 'equalto', 1) | length) == 0
-        msg: "There were no proxy connections in previous day log."
-
-    - name: "Daily Connections | Get account name for each port"
-      ansible.builtin.set_fact:
-        __port_account_map: >-
-          {%- set __port_account_map = [] -%}
-          {%- set port = 'port' -%}
-          {%- set count = 'count' -%}
-          {%- set account = 'account' -%}
-          {%- for item in __used_ports | dict2items -%}
-             {%- set __port = item.key -%}
-             {%- set __count = item.value -%}
-             {%- set __account = __ports_summary | selectattr('allports', 'contains', __port | int ) | map(attribute='xtream_account') | first -%}
-             {%- set item_dict = {
-               port: __port,
-               count: __count,
-               account: __account
-               } -%}
-           {%- set _ = __port_account_map.append(item_dict) -%}
-          {%- endfor -%}
-          {{ __port_account_map }}
-
-    - name: "Daily Connections | Initialize an empty dictionary to store aggregated counts"
-      ansible.builtin.set_fact:
-        __total_connections: {}
-
-    - name: "Daily Connections | Aggregate counts by account"
-      ansible.builtin.set_fact:
-        __total_connections: >-
           {{
-            __total_connections | combine(
-              { item.account: (__total_connections[item.account] | default(0)) + item.count }
-            )
+            __full_log.splitlines()
+            | select('search', '(/player_api\.php|/xmltv\.php|/live/)')
+            | list
           }}
-      loop: "{{ __port_account_map }}"
-      loop_control:
-        loop_var: item
+      no_log: true
 
-    - name: "Daily Connections | Set the aggregated counts"
+    # ------------------------------------------------------------
+    # Compute used backend ports (if your log_format includes upstream addr like 127.0.0.1:30001)
+    # This gracefully handles the case where no upstream port is present.
+    # ------------------------------------------------------------
+    - name: "Daily Connections | Extract used backend ports (if present in log lines)"
       ansible.builtin.set_fact:
-        __sorted_total_collections: "{{ __total_connections | dictsort }}"
+        __used_ports: >-
+          {{
+            (__iptv_log
+             | map('regex_search', (role_iptvservice__firewall_local_ip | regex_escape) ~ ':[0-9]{5}')
+             | select('truthy')
+             | map('regex_search', '[0-9]{5}$')
+             | select('truthy')
+             | list
+            ) | community.general.counter
+          }}
+
+    # If there’s truly *no* activity we’ll avoid template/email later
+    - name: "Daily Connections | Any IPTV activity?"
+      ansible.builtin.set_fact:
+        __has_activity: "{{ (__iptv_log | length) > 0 }}"
+
+    # ------------------------------------------------------------
+    # Build list of unique IPs by user. We find a username in either:
+    #   - query string (?username=foo) OR
+    #   - path (/live/foo/foo/...), (/series|/movie|/timeshift too)
+    # ------------------------------------------------------------
+    - name: "Daily Connections | Build username list from __users"
+      ansible.builtin.set_fact:
+        __all_users: "{{ __users.keys() | list | sort }}"
 
     - name: "Daily Connections | Create list of IPs used by each user"
       ansible.builtin.set_fact:
         __unique_user_ips: >-
-          {%- set __unique_user_ips = [] -%}
-          {%- set user = 'user' -%}
-          {%- set provider = 'provider' -%}
-          {%- set ip_list = [] -%}
-          {%- for u in __proxy_users | map(attribute='proxy_username') | unique | sort -%}
-            {%- set __matching_log_lines = __iptv_log | select('search', '/' ~ u) -%}
-            {%- set __ip_list = __matching_log_lines | map('split', ' ') | map('first') | list | unique -%}
-            {%- set __provider = __proxy_users | selectattr('proxy_username', '==', u) | map(attribute='provider_name') | first -%}
-            {%- set item_dict = {
-                'user': u,
-                'ip_list': __ip_list,
-                'provider': __provider
-                }
+          {%- set rows = [] -%}
+          {%- for u in __all_users -%}
+            {# Lines with ?username=u or /live/u/ or /series/u/ or /movie/u/ or /timeshift/u/ #}
+            {%- set user_lines =
+                (__iptv_log
+                 | select('search', ('username=' ~ (u | regex_escape)))
+                 | list)
+                + (__iptv_log
+                   | select('search', ('/live/' ~ (u | regex_escape) ~ '/'))
+                   | list)
+                + (__iptv_log
+                   | select('search', ('/series/' ~ (u | regex_escape) ~ '/'))
+                   | list)
+                + (__iptv_log
+                   | select('search', ('/movie/' ~ (u | regex_escape) ~ '/'))
+                   | list)
+                + (__iptv_log
+                   | select('search', ('/timeshift/' ~ (u | regex_escape) ~ '/'))
+                   | list)
             -%}
-            {%- set _ = __unique_user_ips.append(item_dict) -%}
+            {%- set user_lines = user_lines | unique -%}
+            {%- if user_lines | length > 0 -%}
+              {%- set ips = (user_lines | map('split', ' ') | map('first') | list | unique) -%}
+              {# Try to guess a provider for the user by looking for a port on the same lines #}
+              {%- set port_match = (user_lines
+                   | map('regex_search', (role_iptvservice__firewall_local_ip | regex_escape) ~ ':[0-9]{5}')
+                   | select('truthy')
+                   | map('regex_search', '[0-9]{5}$')
+                   | select('truthy')
+                   | first) -%}
+              {%- set provider = (__port_to_provider[port_match] if port_match is defined and port_match in __port_to_provider else 'unknown') -%}
+              {%- set _ = rows.append({'user': u, 'ip_list': ips, 'provider': provider}) -%}
+            {%- endif -%}
           {%- endfor -%}
-          {{ __unique_user_ips }}
+          {{ rows }}
 
+    # ------------------------------------------------------------
+    # Write out per-user IP files
+    # ------------------------------------------------------------
     - name: "Daily Connections | Ensure user_ips directory exists"
       ansible.builtin.file:
         path: "{{ role_iptvservice__iptv_logs_path }}/user_ips"
         state: directory
         mode: '0750'
 
-    - name: "Daily Connections | Add IPs to user IP file"
+    - name: "Daily Connections | Add IPs to per-user file"
       ansible.builtin.lineinfile:
-        path: '{{ role_iptvservice__iptv_logs_path }}/user_ips/{{ item.0.user }}'
-        line: '{{ item.1 }}'
+        path: "{{ role_iptvservice__iptv_logs_path }}/user_ips/{{ item.0.user }}"
+        line: "{{ item.1 }}"
         state: present
         create: true
         mode: '0644'
-      register: __add_ip
       loop: "{{ __unique_user_ips | subelements('ip_list') }}"
       loop_control:
-        label: >-
-          Checking User: '{{ item.0.user }}' for IP: '{{ item.1 }}'
+        label: "User: {{ item.0.user }} IP: {{ item.1 }}"
+      register: __add_ip
 
-    - name: "Daily Connections | Create list of user IP status"
+    - name: "Daily Connections | Summarize IP add status"
       ansible.builtin.set_fact:
         __ip_status: >-
-          {%- set __ip_status = [] -%}
-          {%- set user = 'user' -%}
-          {%- set ip = 'ip' -%}
-          {%- set new = 'new' -%}
-          {%- for item in __unique_user_ips | subelements('ip_list') | zip(__add_ip.results) -%}
-            {%- set __new = 'true' if item.1.changed | bool else 'false' -%}
-            {%- set item_dict = {
-              user: (item.0 | first).user,
-              ip: item.0 | last,
-              new: __new}
-            -%}
-          {%- set _ = __ip_status.append(item_dict) -%}
+          {%- set out = [] -%}
+          {%- for z in (__unique_user_ips | subelements('ip_list') | zip(__add_ip.results)) -%}
+            {%- set pair = z.0 -%}
+            {%- set res  = z.1 -%}
+            {%- set _ = out.append({
+                'user': (pair | first).user,
+                'ip':   (pair | last),
+                'new':  ('true' if (res.changed | bool) else 'false')
+              }) -%}
           {%- endfor -%}
-          {{ __ip_status }}
+          {{ out }}
 
-    - name: "Daily Connections | Create list of IP info"
+    # ------------------------------------------------------------
+    # Build port usage table (if your access log shows upstream IP:port)
+    # ------------------------------------------------------------
+    - name: "Daily Connections | Build port→count list (if any ports were seen)"
+      ansible.builtin.set_fact:
+        __port_account_map: >-
+          {%- set rows = [] -%}
+          {%- for kv in (__used_ports | dict2items) -%}
+            {%- set p = kv.key -%}
+            {%- set c = kv.value -%}
+            {%- set acct = (__port_to_account[p] if p in __port_to_account else 'unknown') -%}
+            {%- set item = {'port': p, 'count': c, 'account': acct} -%}
+            {%- set _ = rows.append(item) -%}
+          {%- endfor -%}
+          {{ rows }}
+
+    - name: "Daily Connections | Aggregate counts by account"
+      ansible.builtin.set_fact:
+        __total_connections: >-
+          {%- set d = {} -%}
+          {%- for row in __port_account_map -%}
+            {%- set key = row.account -%}
+            {%- set val = (d.get(key, 0) + (row.count | int)) -%}
+            {%- set _ = d.update({key: val}) -%}
+          {%- endfor -%}
+          {{ d }}
+
+    - name: "Daily Connections | Sort aggregated counts"
+      ansible.builtin.set_fact:
+        __sorted_total_collections: "{{ __total_connections | dictsort }}"
+
+    # ------------------------------------------------------------
+    # IP intel (PTR + whois org + most recent timestamp for the IP)
+    # ------------------------------------------------------------
+    - name: "Daily Connections | Build IP info list"
       ansible.builtin.set_fact:
         __ip_info: >-
-          {%- set __ip_info = [] -%}
-          {%- set ip = 'ip' -%}
-          {%- set reverse = 'reverse' -%}
-          {%- set org = 'org' -%}
-          {%- set recent = 'recent' -%}
-          {%- set list_of_ips = __unique_user_ips | map(attribute='ip_list') | flatten -%}
-          {%- for i in list_of_ips -%}
-            {%- set __reverse = lookup('community.general.dig', i, qtype='PTR', fail_on_error=false, retry_servfail=true) -%}
-            {%- set __org = (lookup('ansible.builtin.pipe', 'whois ' + i) | split('\n') | select('search', 'org-name|orgname|Organization')
-              | first) | split(':') | last | trim -%}
-            {%- set __recent = ((__iptv_log | select('search', i) | last) | split(' '))[3] | regex_replace('\\[', '') -%}
-            {%- set item_dict = {
-                  ip: i,
-                  reverse: __reverse,
-                  org: __org,
-                  recent: __recent,
-                }
-            -%}
-            {%- set _ = __ip_info.append(item_dict) -%}
+          {%- set rows = [] -%}
+          {%- set all_ips = (__unique_user_ips | map(attribute='ip_list') | flatten | unique | list) -%}
+          {%- for i in all_ips -%}
+            {%- set rev = lookup('community.general.dig', i, qtype='PTR', fail_on_error=false, retry_servfail=true) -%}
+            {%- set org = (lookup('ansible.builtin.pipe', 'whois ' ~ i) | split('\n')
+                           | select('search', 'org-name|orgname|Organization') | first
+                           | default('') | split(':') | last | trim) -%}
+            {%- set recent_line = (__iptv_log | select('search', i) | last | default('')) -%}
+            {%- set recent = (recent_line.split(' ') | list | first | default('')) -%}
+            {%- set _ = rows.append({'ip': i, 'reverse': rev, 'org': org, 'recent': recent}) -%}
           {%- endfor -%}
-          {{ __ip_info }}
+          {{ rows }}
 
+    # ------------------------------------------------------------
+    # Write reports and email
+    # ------------------------------------------------------------
     - name: "Daily Connections | Ensure reports directory exists"
       ansible.builtin.file:
-        path: '{{ role_iptvservice__report_path }}'
+        path: "{{ role_iptvservice__report_path }}"
         state: directory
         mode: '0750'
 
@@ -213,6 +233,9 @@
         dest: "{{ role_iptvservice__report_path }}/{{ ansible_date_time.date }}-iptv-monitor.txt"
         mode: '0600'
       become: true
+      vars:
+        ports_seen: "{{ __port_account_map | length > 0 }}"
+        has_activity: "{{ __has_activity }}"
 
     - name: "Daily Connections | Template html report"
       ansible.builtin.template:
@@ -220,6 +243,9 @@
         dest: "{{ role_iptvservice__report_path }}/{{ ansible_date_time.date }}-iptv-monitor.html"
         mode: '0600'
       become: true
+      vars:
+        ports_seen: "{{ __port_account_map | length > 0 }}"
+        has_activity: "{{ __has_activity }}"
 
     - name: "Daily Connections | Slurp report"
       ansible.builtin.slurp:
@@ -228,7 +254,7 @@
 
     - name: "Daily Connections | Decode report"
       ansible.builtin.set_fact:
-        __report: "{{ __encoded_report['content'] | b64decode }}"
+        __report: "{{ __encoded_report.content | b64decode }}"
 
     - name: "Daily Connections | Email the report"
       community.general.mail:
@@ -241,8 +267,8 @@
         body: "{{ __report }}"
         subtype: html
       become: true
+
   rescue:
     - name: "Daily Connections | Fail playbook"
       ansible.builtin.fail:
         msg: "Something went wrong with the report."
-...

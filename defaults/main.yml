@@ -30,4 +30,9 @@ role_iptvservice__oos_url: https://yourwebsite.com/out_of_service.ts
 role_iptvservice__kill_mode: false
 # Stable, deterministic port assignment:
 # starting from role_iptvservice__proxy_start_port and increment by 1 for each upstream account
+
+role_iptvservice__nginx_log_prev_day: "/var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_access.log.1"
+...
+
+
 ...
