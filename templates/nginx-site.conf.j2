@@ -33,12 +33,11 @@ server {
     access_log /var/log/nginx/yiafe_access.log;
     error_log  /var/log/nginx/yiafe_error.log;
 
+    root {{ web_root }};
+    index index.php index.html;
+
     # If auth_request returns 401/403, handle here (may carry redirect hint)
     error_page 401 403 = @auth_fail;
-
-    {% if role_iptvservice__enable_ua_filter | bool %}
-    if ($ua_ok = 0) { return 403; }
-    {% endif %}
 
     {% for p in role_iptvservice__protected_paths | default([]) %}
     location {{ p.path }} {
@@ -53,70 +52,52 @@ server {
     }
 
     # ==========================================================
-    #  LOCAL SITE (NO IPTV AUTH)
+    #  LOCAL SITE (NO IPTV AUTH) — shielded with ^~
     # ==========================================================
 
-    # Root → serve local index.php
+    # Root landing
     location = / {
-        root {{ web_root }};
-        rewrite ^ /index.php last;
+        try_files /index.php =404;
     }
 
-    # Common static bits without auth
-    location = /favicon.ico { access_log off; log_not_found off; root {{ web_root }}; }
-    location = /robots.txt  { access_log off; log_not_found off; root {{ web_root }}; }
-    location ^~ /assets/    { root {{ web_root }}; try_files $uri =404; }
+    # Static bits
+    location = /favicon.ico { access_log off; log_not_found off; try_files /favicon.ico =404; }
+    location = /robots.txt  { access_log off; log_not_found off; try_files /robots.txt  =404; }
+    location ^~ /assets/    { try_files $uri =404; }
 
-    # Local sections (redirect to trailing slash)
+    # Local sections → redirect to trailing slash
     location = /calc        { return 301 /calc/; }
     location = /ae          { return 301 /ae/; }
     location = /contact     { return 301 /contact/; }
     location = /iptvservice { return 301 /iptvservice/; }
     location = /curve       { return 301 /curve/; }
 
-    # Local sections (no auth; front-controller friendly)
-    location /calc/ {
-        root {{ web_root }};
-        index index.php index.html;
+    # Local sections (no auth; PHP front-controllers)
+    location ^~ /calc/ {
         try_files $uri $uri/ /calc/index.php?$args;
     }
-    location /ae/ {
-        root {{ web_root }};
-        index index.php index.html;
+    location ^~ /ae/ {
         try_files $uri $uri/ /ae/index.php?$args;
     }
-    location /contact/ {
-        root {{ web_root }};
-        index index.php index.html;
+    location ^~ /contact/ {
         try_files $uri $uri/ /contact/index.php?$args;
     }
-    location /iptvservice/ {
-        root {{ web_root }};
-        index index.php index.html;
+    location ^~ /iptvservice/ {
         try_files $uri $uri/ /iptvservice/index.php?$args;
     }
-    location /curve/ {
-        root {{ web_root }};
-        index index.php index.html;
+    location ^~ /curve/ {
         try_files $uri $uri/ /curve/index.php?$args;
     }
 
-    # PHP handler for local site ONLY
-    location = /index.php {
-        root {{ web_root }};
-        include fastcgi_params;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        fastcgi_pass {{ php_fpm }};
-    }
-    location ~ ^/(calc|ae|contact|iptvservice|curve)/.+\.php$ {
-        root {{ web_root }};
+    # PHP for local site ONLY (generic)
+    location ~ \.php$ {
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         fastcgi_pass {{ php_fpm }};
     }
 
     # ==========================================================
-    #  IPTV PROXY (AUTH-GATED) — your original working logic
+    #  IPTV PROXY (AUTH-GATED) — your proven working logic
     # ==========================================================
 
     # Internal auth endpoint
@@ -139,6 +120,10 @@ server {
 
     # -------- Playlists (.m3u8) ----------
     location ~* ^/(?:[^/]+/)?(live|series|movie|timeshift)/([^/]+)/([^/]+)/(.*\.m3u8)$ {
+        {% if role_iptvservice__enable_ua_filter | bool %}
+        if ($ua_ok = 0) { return 403; }
+        {% endif %}
+
         set $saved_args $args;
         set $saved_user $2;
         set $saved_pass $3;
@@ -184,6 +169,10 @@ server {
 
     # -------- Segments & everything else under media paths ----------
     location ~ ^/(?:[^/]+/)?(live|series|movie|timeshift)/([^/]+)/([^/]+)/(.*)$ {
+        {% if role_iptvservice__enable_ua_filter | bool %}
+        if ($ua_ok = 0) { return 403; }
+        {% endif %}
+
         set $saved_args $args;
         set $saved_user $2;
         set $saved_pass $3;
@@ -220,6 +209,10 @@ server {
     # -------- API (player_api.php, get.php, xmltv.php, etc.) ----------
     # (Both prefixed /USERNAME/ and non-prefixed via $api_uri_stripped)
     location ~* ^/(?:[^/]+/)?(?:player_api\.php|get\.php|xmltv\.php)$ {
+        {% if role_iptvservice__enable_ua_filter | bool %}
+        if ($ua_ok = 0) { return 403; }
+        {% endif %}
+
         set $saved_args $args;
         set $saved_user $arg_username;
         if ($saved_user = "") { set $saved_user $path_user; }
