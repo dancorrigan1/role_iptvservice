@@ -82,20 +82,20 @@
   ansible.builtin.include_tasks:
     file: upstream_accounts.yml
     apply:
-      tags: iptvproxy
+      tags: upstream_accounts
   tags: upstream_accounts
 
 - name: "Include numconnections tasks"
   ansible.builtin.include_tasks:
     file: numconnections.yml
     apply:
-      tags: iptvproxy
+      tags: numconnections
   tags: numconnections
 
 - name: "Include dailyconnections tasks"
   ansible.builtin.include_tasks:
     file: dailyconnections.yml
     apply:
-      tags: iptvproxy
+      tags: dailyconnections
   tags: dailyconnections
 ...
