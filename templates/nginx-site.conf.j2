@@ -150,6 +150,9 @@ server {
 
     # -------- API (player_api.php, get.php, xmltv.php, etc.) ----------
     location / {
+        if ($uri = "/") {
+          return 302 {{ role_iptvservice__root_redirect }};
+        }
         set $saved_args $args;
         set $saved_user $arg_username;
         if ($saved_user = "") { set $saved_user $path_user; }
