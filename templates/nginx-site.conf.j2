@@ -30,6 +30,7 @@ server {
    return 301 https://$server_name$request_uri;
 }
 
+# https / port 443
 server {
     listen 443 ssl;
     server_name {{ (role_iptvservice__iptv_hostname | unique) | join(' ') }};
