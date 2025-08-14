@@ -27,8 +27,8 @@ server {
     listen 80;
     server_name {{ (all_server_names | unique) | join(' ') }};
 
-    access_log /var/log/nginx/yiafe_access.log;
-    error_log  /var/log/nginx/yiafe_error.log;
+    access_log /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_access.log;
+    error_log  /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_error.log;
 
     # If auth_request returns 401/403, handle here (may carry redirect hint)
     error_page 401 403 = @auth_fail;
