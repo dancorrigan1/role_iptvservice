@@ -49,14 +49,13 @@ server {
 
     # === NO-AUTH OOS CLIP (exact match) ===
     location = /oos.ts {
-        # no auth_request here; serve/redirect freely
         return 302 https://phishbox.phisher1.com/oos.ts;
     }
 
     # ==========================================================
-    #  LOCAL SITE (no IPTV auth)
+    #  LOCAL SITE (NO IPTV AUTH)
     # ==========================================================
-    # Root should execute index.php at {{ web_root }}
+    # Root: run /index.php at {{ web_root }}
     location = / {
         root {{ web_root }};
         rewrite ^ /index.php last;
@@ -70,47 +69,49 @@ server {
         fastcgi_pass {{ php_fpm }};
     }
 
-    # Static under root (optional common assets dir)
+    # Static convenience
     location ^~ /assets/ {
         root {{ web_root }};
         try_files $uri =404;
     }
+    location = /favicon.ico { access_log off; log_not_found off; root {{ web_root }}; }
+    location = /robots.txt  { access_log off; log_not_found off; root {{ web_root }}; }
 
-    # Convenience redirects to add trailing slash for local sections
+    # Trailing-slash helpers
     location = /calc        { return 301 /calc/; }
     location = /ae          { return 301 /ae/; }
     location = /contact     { return 301 /contact/; }
     location = /iptvservice { return 301 /iptvservice/; }
     location = /curve       { return 301 /curve/; }
 
-    # Local sections (static + PHP front controllers)
-    location ^~ /calc/ {
+    # Local sections (no auth; allow PHP front controllers)
+    location /calc/ {
         root {{ web_root }};
         index index.php index.html;
         try_files $uri $uri/ /calc/index.php?$args;
     }
-    location ^~ /ae/ {
+    location /ae/ {
         root {{ web_root }};
         index index.php index.html;
         try_files $uri $uri/ /ae/index.php?$args;
     }
-    location ^~ /contact/ {
+    location /contact/ {
         root {{ web_root }};
         index index.php index.html;
         try_files $uri $uri/ /contact/index.php?$args;
     }
-    location ^~ /iptvservice/ {
+    location /iptvservice/ {
         root {{ web_root }};
         index index.php index.html;
         try_files $uri $uri/ /iptvservice/index.php?$args;
     }
-    location ^~ /curve/ {
+    location /curve/ {
         root {{ web_root }};
         index index.php index.html;
         try_files $uri $uri/ /curve/index.php?$args;
     }
 
-    # PHP inside those local sections ONLY
+    # PHP inside those local sections ONLY (must be evaluated; don't use ^~ above)
     location ~ ^/(calc|ae|contact|iptvservice|curve)/.+\.php$ {
         root {{ web_root }};
         include fastcgi_params;
@@ -221,7 +222,6 @@ server {
     }
 
     # -------- API (player_api.php, get.php, xmltv.php, etc.) ----------
-    # (Keep this last so local-site locations win via exact/^~ matches)
     location / {
         set $saved_args $args;
         set $saved_user $arg_username;
