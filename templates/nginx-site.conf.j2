@@ -23,6 +23,12 @@ map $upstream_http_x_host $proxy_host_hdr {
     default $upstream_http_x_host;
 }
 
+# log_format
+log_format main_ext '$remote_addr - $remote_user [$time_local] "$request" '
+   '$status $body_bytes_sent "$http_referer" '
+   '"$http_user_agent" '
+   '$request_time $upstream_response_time $iptv_agents $upstream_addr $upstream_status';
+
 # http / port 80
 server {
    listen 80;
@@ -34,7 +40,7 @@ server {
 server {
     listen 443 ssl;
     server_name {{ (role_iptvservice__iptv_hostname | unique) | join(' ') }};
-    access_log /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_access.log;
+    access_log /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_access.log main_ext;
     error_log  /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_error.log;
 
     # SSL
