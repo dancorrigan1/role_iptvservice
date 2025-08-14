@@ -25,7 +25,7 @@ map $upstream_http_x_host $proxy_host_hdr {
 
 server {
     listen 80;
-    server_name {{ (all_server_names | unique) | join(' ') }};
+    server_name {{ (role_iptvservice__iptv_hostname | unique) | join(' ') }};
 
     access_log /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_access.log;
     error_log  /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_error.log;

@@ -11,12 +11,6 @@
     mode: "0644"
   notify: reload nginx
   vars:
-    all_server_names: >-
-      {{
-        (role_iptvservice__iptv_hostname | list)
-        + (role_iptvservice__iptv_hostname | map('regex_replace','^(.*)$','iptv.\\1') | list)
-        + (role_iptvservice__iptv_hostname | map('regex_replace','^(.*)$','test.\\1') | list)
-      }}
     backend_ports: "{{ __backends | map(attribute='port') | list }}"
 
 - name: Enable site
