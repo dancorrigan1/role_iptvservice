@@ -19,7 +19,7 @@ map $http_user_agent $ua_ok {
 
 # Prefer host header returned by auth app; else default
 map $upstream_http_x_host $proxy_host_hdr {
-    ""      iptv.{{ role_iptvservice__iptv_hostname | first }};
+    ""      {{ role_iptvservice__iptv_hostname | first }};
     default $upstream_http_x_host;
 }
 
