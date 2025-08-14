@@ -1,7 +1,7 @@
 ---
 - name: Upstream Accounts | Test Connect to Each Upstream Account (retry)
   ansible.builtin.uri:
-    url: "{{ item.0.url | trim }}/player_api.php?username={{ item.1.username }}&password={{ item.1.password | }}"
+    url: "{{ item.0.url | trim }}/player_api.php?username={{ item.1.username }}&password={{ item.1.password }}"
     method: GET
     return_content: false
     timeout: 10
