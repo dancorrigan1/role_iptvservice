@@ -14,18 +14,6 @@
   delay: 10
   no_log: false
 
-# - name: Upstream Accounts | Test Connect to Each Upstream Account
-#   ansible.builtin.uri:
-#     url: "{{ item.0.url }}/player_api.php?username={{ item.1.username }}&password={{ item.1.password }}"
-#     method: GET
-#     status_code: 200
-#   loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
-#   loop_control:
-#     label: "Checking {{ item.1.account }}:{{ item.1.username }} at {{ item.0.url }}"
-#   register: __upstream_test_results
-#   ignore_errors: true
-#   no_log: false
-
 - name: Upstream Accounts | Normalize results
   ansible.builtin.set_fact:
     __results: >-
@@ -79,35 +67,38 @@
   loop_control:
     label: "Displaying {{ item.account }}:{{ item.username }} at {{ item.url }}"
 
-# - name: Upstream Accounts | Get pids of iptv-proxy for failed accounts
-#   community.general.pids:
-#     pattern: "--xtream-user {{ item.username }} --xtream-password {{ item.password }}"
-#   become: true
-#   loop: "{{ __failed_upstreams }}"
-#   loop_control:
-#     label: "Getting PIDs of iptv-proxy for '{{ item.account }}'"
-#     index_var: __my_idx
-#     extended: true
-#     extended_allitems: false
-#   register: __proxy_pids
+- name: Upstream Accounts | Kill Mode Activated
+  when: role_iptvservice__kill_mode | bool
+  block:
+    - name: Upstream Accounts | Get pids of iptv-proxy for failed accounts
+      community.general.pids:
+        pattern: "--xtream-user {{ item.username }} --xtream-password {{ item.password }}"
+      become: true
+      loop: "{{ __failed_upstreams }}"
+      loop_control:
+        label: "Getting PIDs of iptv-proxy for '{{ item.account }}'"
+        index_var: __my_idx
+        extended: true
+        extended_allitems: false
+      register: __proxy_pids
 
-# - name: Upstream Accounts | Kill iptv-proxy pids for failed accounts
-#   ansible.builtin.command:
-#     cmd: "kill -9 {{ item.pids | join(' ') }}"
-#   become: true
-#   loop: "{{ __proxy_pids.results }}"
-#   changed_when: true
-#   when: item.pids | length > 0
+    - name: Upstream Accounts | Kill iptv-proxy pids for failed accounts
+      ansible.builtin.command:
+        cmd: "kill -9 {{ item.pids | join(' ') }}"
+      become: true
+      loop: "{{ __proxy_pids.results }}"
+      changed_when: true
+      when: item.pids | length > 0
 
-# - name: Upstream Accounts | Remove upstreams for failed accounts
-#   ansible.builtin.replace:
-#     path: "{{ role_iptvservice__nginx_conf }}"
-#     regexp: '^(.*server.*{{ item.account }} -.*)$'
-#     replace: '# \1'
-#   loop: "{{ __failed_upstreams }}"
-#   loop_control:
-#     label: "Removing upstream for Account '{{ item.account }}' from NGINX Config"
-#   notify: Reload nginx
+    - name: Upstream Accounts | Remove upstreams for failed accounts
+      ansible.builtin.replace:
+        path: "{{ role_iptvservice__nginx_conf }}"
+        regexp: '^(.*server.*{{ item.account }} -.*)$'
+        replace: '# \1'
+      loop: "{{ __failed_upstreams }}"
+      loop_control:
+        label: "Removing upstream for Account '{{ item.account }}' from NGINX Config"
+      notify: Reload nginx
 
 - name: Upstream Accounts | Email report of overloaded accounts
   community.general.mail:
