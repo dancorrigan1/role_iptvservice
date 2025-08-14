@@ -3,8 +3,9 @@
 
 {% set hosts = role_iptvservice__iptv_hostname | default(['yiafe.com']) %}
 {% set first_host = (hosts | first) | trim %}
-{% set server_names = (hosts + ['iptv.' ~ first_host, 'test.' ~ first_host]) | unique %}
+{% set server_names = (hosts + ['www.' ~ first_host, 'iptv.' ~ first_host, 'test.' ~ first_host]) | unique %}
 {% set php_fpm = role_iptvservice__php_fpm | default('unix:/run/php/php8.3-fpm.sock') %}
+{% set oos_url = role_iptvservice__oos_url | default('https://phishbox.phisher1.com/oos.ts') %}
 
 server {
     listen 80;
@@ -12,6 +13,13 @@ server {
 
     access_log /var/log/nginx/yiafe_access.log;
     error_log  /var/log/nginx/yiafe_error.log;
+
+    # Used by 403 handler (live OFF) to jump to your OOS clip
+    set $oos_url "{{ oos_url }}";
+
+    # Pre-capture first path segment so the auth app can use it
+    set $path_user "";
+    if ($uri ~ "^/([^/]+)") { set $path_user $1; }
 
     # ---------------------------------------------
     # INTERNAL AUTH SUBREQUEST TO FLASK
@@ -23,24 +31,22 @@ server {
         proxy_set_header Content-Length "";
         proxy_set_header Authorization $http_authorization;
 
-        # Variables are set in calling locations:
-        proxy_set_header X-Q-User    $saved_user;
-        proxy_set_header X-Q-Pass    $saved_pass;
-        proxy_set_header X-Path-User $path_user;
-        proxy_set_header X-Orig-Args $saved_args;
+        # Values are set by each calling location:
+        proxy_set_header X-Q-User       $saved_user;
+        proxy_set_header X-Q-Pass       $saved_pass;
+        proxy_set_header X-Path-User    $path_user;
+        proxy_set_header X-Orig-Args    $saved_args;
         proxy_set_header X-Original-URI $request_uri;
 
         access_log /var/log/nginx/yiafe_auth_access.log;
     }
 
-    # If auth says 401/403, handle redirect here (X-Redirect) else return 401.
-    error_page 401 403 = @auth_fail;
+    # Distinct handlers for auth errors (no "if" required)
+    error_page 401 = @auth_401;
+    error_page 403 = @auth_403;
 
-    location @auth_fail {
-        # Pass through optional redirect from app
-        if ($upstream_http_x_redirect != "") { return 302 $upstream_http_x_redirect; }
-        return 401;
-    }
+    location @auth_401 { return 401; }             # not authorized
+    location @auth_403 { return 302 $oos_url; }    # live disabled → OOS
 
     # ==========================================================
     #  LOCAL SITE (NO IPTV AUTH): /, /calc, /ae, /contact, /iptvservice, /curve
@@ -48,7 +54,6 @@ server {
     # Serve "/" from local root and EXECUTE index.php
     location = / {
         root /var/www/html/yiafe.com;
-        # rewrite to index.php to ensure PHP executes, not static return
         rewrite ^ /index.php last;
     }
 
@@ -60,18 +65,18 @@ server {
         fastcgi_pass {{ php_fpm }};
     }
 
-    # Static for root (images/css/js/etc)
+    # Static for root (assets)
     location ^~ /assets/ {
         root /var/www/html/yiafe.com;
         try_files $uri =404;
     }
 
-    # Friendly redirect to add trailing slash for the local sections if called without it
-    location = /calc       { return 301 /calc/; }
-    location = /ae         { return 301 /ae/; }
-    location = /contact    { return 301 /contact/; }
-    location = /iptvservice{ return 301 /iptvservice/; }
-    location = /curve      { return 301 /curve/; }
+    # Friendly redirect to add trailing slash for local sections
+    location = /calc        { return 301 /calc/; }
+    location = /ae          { return 301 /ae/; }
+    location = /contact     { return 301 /contact/; }
+    location = /iptvservice { return 301 /iptvservice/; }
+    location = /curve       { return 301 /curve/; }
 
     # Local sections (static + PHP)
     location ^~ /calc/ {
@@ -111,10 +116,6 @@ server {
     # ==========================================================
     #  IPTV PROXY (AUTH-GATED)
     # ==========================================================
-
-    # -------- Helper: capture path user (first segment) when needed
-    set $path_user "";
-    if ($uri ~ "^/([^/]+)") { set $path_user $1; }
 
     # ---------- Player API (non-prefixed, e.g. /player_api.php)
     location = /player_api.php {
@@ -163,9 +164,9 @@ server {
 
         auth_request /_auth;
 
-        auth_request_set $backend      $upstream_http_x_backend;
-        auth_request_set $basic        $upstream_http_x_basic;
-        auth_request_set $fwd_args     $upstream_http_x_rewrite_args;
+        auth_request_set $backend  $upstream_http_x_backend;
+        auth_request_set $basic    $upstream_http_x_basic;
+        auth_request_set $fwd_args $upstream_http_x_rewrite_args;
 
         proxy_pass $backend/get.php?$fwd_args;
 
@@ -180,11 +181,10 @@ server {
         send_timeout 1h;
     }
 
-    # ---------- Prefixed API (/USERNAME/player_api.php or /USERNAME/get.php or /USERNAME/xmltv.php)
+    # ---------- Prefixed API (/USERNAME/player_api.php|get.php|xmltv.php)
     location ~ ^/([^/]+)/(player_api|get|xmltv)\.php$ {
         set $saved_args $args;
-        set $saved_user $arg_username;
-        if ($saved_user = "") { set $saved_user $1; }
+        set $saved_user $arg_username;   # if client omitted, auth app will use X-Path-User
         set $saved_pass $arg_password;
 
         auth_request /_auth;
@@ -206,7 +206,6 @@ server {
 
         sub_filter_once off;
         sub_filter_types *;
-
         sub_filter "\"username\":\"$display_user\"" "\"username\":\"$display_user\"";
         sub_filter "\"password\":\"$display_pass\"" "\"password\":\"$display_pass\"";
         sub_filter "\"container_extension\":\"\"" "\"container_extension\":\"$desired_ext\"";
@@ -290,11 +289,7 @@ server {
     # ---------- Catch-all for other IPTV API calls (not handled above)
     location / {
         set $saved_args $args;
-        set $saved_user $arg_username;
-        if ($saved_user = "") {
-            # Fall back to first path segment as a possible username
-            if ($uri ~ "^/([^/]+)") { set $saved_user $1; }
-        }
+        set $saved_user $arg_username;   # if empty, auth app will fall back to X-Path-User
         set $saved_pass $arg_password;
 
         auth_request /_auth;
@@ -306,7 +301,7 @@ server {
         auth_request_set $display_pass $upstream_http_x_display_pass;
         auth_request_set $desired_ext  $upstream_http_x_desired_ext;
 
-        # Strip optional /USERNAME/ prefix for backend
+        # If prefixed /USERNAME/*.php, strip the prefix for backend
         set $api_path $uri;
         if ($uri ~ "^/[^/]+/(.*\.php)$") { set $api_path "/$1"; }
 
@@ -320,7 +315,6 @@ server {
 
         sub_filter_once off;
         sub_filter_types *;
-
         sub_filter "\"username\":\"$display_user\"" "\"username\":\"$display_user\"";
         sub_filter "\"password\":\"$display_pass\"" "\"password\":\"$display_pass\"";
         sub_filter "\"container_extension\":\"\"" "\"container_extension\":\"$desired_ext\"";
