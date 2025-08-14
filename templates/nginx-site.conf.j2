@@ -143,10 +143,18 @@ server {
         sub_filter_once off;
         sub_filter_types *;
 
-        sub_filter "\"username\":\"$display_user\"" "\"username\":\"$display_user\"";
-        sub_filter "\"password\":\"$display_pass\"" "\"password\":\"$display_pass\"";
+        # keep JSON identity consistent
+        sub_filter "\"username\":\"$proxy_user\"" "\"username\":\"$display_user\"";
+        sub_filter "\"password\":\"$proxy_pass\"" "\"password\":\"$display_pass\"";
         sub_filter "\"container_extension\":\"\"" "\"container_extension\":\"$desired_ext\"";
         sub_filter "\"container_extension\":null"  "\"container_extension\":\"$desired_ext\"";
+
+        # **NEW** also rewrite any query-string creds embedded in URLs
+        sub_filter "username=$proxy_user" "username=$display_user";
+        sub_filter "password=$proxy_pass" "password=$display_pass";
+        sub_filter "username%3D$proxy_user" "username%3D$display_user";
+        sub_filter "password%3D$proxy_pass" "password%3D$display_pass";
+        sub_filter "username=$proxy_user&amp;password=$proxy_pass" "username=$display_user&amp;password=$display_pass";
 
         proxy_http_version 1.1;
         proxy_set_header Connection "";
@@ -206,10 +214,19 @@ server {
 
         sub_filter_once off;
         sub_filter_types *;
-        sub_filter "\"username\":\"$display_user\"" "\"username\":\"$display_user\"";
-        sub_filter "\"password\":\"$display_pass\"" "\"password\":\"$display_pass\"";
+
+        # keep JSON identity consistent
+        sub_filter "\"username\":\"$proxy_user\"" "\"username\":\"$display_user\"";
+        sub_filter "\"password\":\"$proxy_pass\"" "\"password\":\"$display_pass\"";
         sub_filter "\"container_extension\":\"\"" "\"container_extension\":\"$desired_ext\"";
         sub_filter "\"container_extension\":null"  "\"container_extension\":\"$desired_ext\"";
+
+        # **NEW** also rewrite any query-string creds embedded in URLs
+        sub_filter "username=$proxy_user" "username=$display_user";
+        sub_filter "password=$proxy_pass" "password=$display_pass";
+        sub_filter "username%3D$proxy_user" "username%3D$display_user";
+        sub_filter "password%3D$proxy_pass" "password%3D$display_pass";
+        sub_filter "username=$proxy_user&amp;password=$proxy_pass" "username=$display_user&amp;password=$display_pass";
 
         proxy_http_version 1.1;
         proxy_set_header Connection "";
@@ -315,10 +332,19 @@ server {
 
         sub_filter_once off;
         sub_filter_types *;
-        sub_filter "\"username\":\"$display_user\"" "\"username\":\"$display_user\"";
-        sub_filter "\"password\":\"$display_pass\"" "\"password\":\"$display_pass\"";
+
+        # keep JSON identity consistent
+        sub_filter "\"username\":\"$proxy_user\"" "\"username\":\"$display_user\"";
+        sub_filter "\"password\":\"$proxy_pass\"" "\"password\":\"$display_pass\"";
         sub_filter "\"container_extension\":\"\"" "\"container_extension\":\"$desired_ext\"";
         sub_filter "\"container_extension\":null"  "\"container_extension\":\"$desired_ext\"";
+
+        # **NEW** also rewrite any query-string creds embedded in URLs
+        sub_filter "username=$proxy_user" "username=$display_user";
+        sub_filter "password=$proxy_pass" "password=$display_pass";
+        sub_filter "username%3D$proxy_user" "username%3D$display_user";
+        sub_filter "password%3D$proxy_pass" "password%3D$display_pass";
+        sub_filter "username=$proxy_user&amp;password=$proxy_pass" "username=$display_user&amp;password=$display_pass";
 
         proxy_http_version 1.1;
         proxy_set_header Connection "";
