@@ -55,17 +55,17 @@
 
 - name: Upstream Accounts | Report successful upstreams
   ansible.builtin.debug:
-    msg: "{{ item.username }}@{{ item.url }} has {{ item.active_cons }}/{{ item.max_connections }} connections"
+    msg: "{{ item.account }}/{{ item.username }}@{{ item.url }} has {{ item.active_cons }}/{{ item.max_connections }} connections"
   loop: "{{ __successful_upstreams }}"
   loop_control:
-    label: "Displaying {{ item.account }}:{{ item.username }} at {{ item.url }}"
+    label: "Displaying account"
 
 - name: Upstream Accounts | Report failed upstreams
   ansible.builtin.debug:
-    msg: "Failed to connect to upstream account {{ item.account }} at {{ item.url }} with username {{ item.username }}"
+    msg: "Failed to connect to upstream account {{ item.account }}/{{ item.username }}@{{ item.url }}"
   loop: "{{ __failed_upstreams }}"
   loop_control:
-    label: "Displaying {{ item.account }}:{{ item.username }} at {{ item.url }}"
+    label: "Displaying account"
 
 - name: Upstream Accounts | Kill Mode Activated
   when: role_iptvservice__kill_mode | bool
