@@ -9,7 +9,7 @@
     src: nginx-site.conf.j2
     dest: "/etc/nginx/sites-available/{{ role_iptvservice__nginx_site_name }}"
     mode: "0644"
-  notify: reload nginx
+  notify: Reload nginx
   vars:
     backend_ports: "{{ __backends | map(attribute='port') | list }}"
 
@@ -18,13 +18,13 @@
     src: "/etc/nginx/sites-available/{{ role_iptvservice__nginx_site_name }}"
     dest: "/etc/nginx/sites-enabled/{{ role_iptvservice__nginx_site_name }}"
     state: link
-  notify: reload nginx
+  notify: Reload nginx
 
 - name: Disable default nginx site (if present)
   ansible.builtin.file:
     path: /etc/nginx/sites-enabled/default
     state: absent
-  notify: reload nginx
+  notify: Reload nginx
 
 - name: Config check - nginx -t
   ansible.builtin.command: nginx -t

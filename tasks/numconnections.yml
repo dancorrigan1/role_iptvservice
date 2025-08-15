@@ -90,7 +90,7 @@
       ansible.builtin.command:
         cmd: kill "{{ item.pids[0] }}"
       become: true
-      loop: "{{ __proxy_pids.results | selectattr('pids','defined') | selectattr('pids','length') | list }}"
+      loop: "{{ __proxy_pids.results | selectattr('pids', 'defined') | selectattr('pids', 'length') | list }}"
       loop_control:
         label: "Kill PID {{ item.pids[0] }}"
       changed_when: true
@@ -117,7 +117,7 @@
           {% endfor %}
 
           Actions taken:
-            • iptables: removed ACCEPT, added REJECT {{ 'and LOG ' if (role_iptvservice__manage_firewall | default(true) | bool) else ''}}for listed ports
+            • iptables: removed ACCEPT, added REJECT {{ 'and LOG ' if (role_iptvservice__manage_firewall | default(true) | bool) else '' }}for listed ports
             • Killed iptv-proxy process on each port
 
 - name: "Number Connections | No overloaded accounts"

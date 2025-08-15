@@ -1,10 +1,10 @@
 ---
-- name: reload nginx
+- name: Reload nginx
   ansible.builtin.service:
     name: nginx
     state: reloaded
 
-- name: restart iptv-auth
+- name: Restart iptv-auth
   ansible.builtin.service:
     name: iptv-auth.service
     state: restarted
