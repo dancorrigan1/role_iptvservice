@@ -4,33 +4,21 @@ import json
 import logging
 import os
 import re
-import time
 from flask import Flask, request, Response
 
-APP_PORT       = {{ role_iptvservice__auth_port }}
-AUTH_ROOT      = "{{ role_iptvservice__auth_root }}"
-USERS_PATH     = os.path.join(AUTH_ROOT, "users.json")
-BACKENDS_PATH  = os.path.join(AUTH_ROOT, "backends.json")
+APP_PORT   = {{ role_iptvservice__auth_port }}
+AUTH_ROOT  = "{{ role_iptvservice__auth_root }}"
+USERS_PATH = os.path.join(AUTH_ROOT, "users.json")
+BACKENDS_PATH = os.path.join(AUTH_ROOT, "backends.json")
 
 DESIRED_EXT = "{{ role_iptvservice__desired_ext }}"
-
-# Offline/over-limit redirect target (used via X-Redirect -> nginx @auth_fail -> 302)
+# Where to send viewers if live==false and they request a channel segment:
 OOS_URL = {{ (role_iptvservice__oos_url | default('https://' + (role_iptvservice__iptv_hostname | first) + '/oos.ts')) | tojson }}
 
-# --- Concurrent-connection limiter (per user) ---
-# TTL (seconds) for considering a session "active" (TS hits every few seconds normally)
-SESSION_TTL   = int(os.environ.get("IPTV_AUTH_SESSION_TTL", "90"))
-# Fallback max when a user has no max_connections in users.json
-DEFAULT_MAX   = int(os.environ.get("IPTV_AUTH_DEFAULT_MAX", "2"))
-# Optional different clip for over-limit; falls back to OOS_URL
-OVERLIMIT_URL = os.environ.get("IPTV_AUTH_OVERLIMIT_URL", OOS_URL)
-
-# Match real channel **segments** (.ts) with or without /USERNAME prefix:
+# Match real channel **segments** (only .ts), with or without /USERNAME prefix:
 #   /live/<u>/<p>/<id>.ts
 #   /<USERNAME>/live/<u>/<p>/<id>.ts
-CHAN_TS_RE   = re.compile(r"^/(?:[^/]+/)?live/[^/]+/[^/]+/\d+\.ts(?:\?.*)?$", re.IGNORECASE)
-# Match live playback requests we want to COUNT towards active sessions (.ts and .m3u8)
-LIVE_REQ_RE  = re.compile(r"^/(?:[^/]+/)?live/[^/]+/[^/]+/\d+\.(?:ts|m3u8)(?:\?.*)?$", re.IGNORECASE)
+CHAN_TS_RE = re.compile(r"^/(?:[^/]+/)?live/[^/]+/[^/]+/\d+\.ts(?:\?.*)?$", re.IGNORECASE)
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -45,53 +33,10 @@ def load_json(path, default):
 USERS    = load_json(USERS_PATH, {})
 BACKENDS = load_json(BACKENDS_PATH, [])
 
-# In-memory active session table: user -> { "ip|ua": last_seen_epoch }
-ACTIVE: dict[str, dict[str, int]] = {}
-
-def _now() -> int:
-    return int(time.time())
-
-def _session_key() -> str:
-    # Prefer headers if nginx passes them; else fallback to remote_addr/UA
-    ip = request.headers.get("X-Client-IP") or request.remote_addr or "-"
-    ua = request.headers.get("X-UA") or request.headers.get("User-Agent", "-")
-    # keep key simple/stable; trim UA to reasonable length
-    return f"{ip}|{ua[:120]}"
-
-def _truthy(v, default=True):
-    if isinstance(v, bool): return v
-    if v is None: return default
-    s = str(v).strip().lower()
-    if s in ("1","true","yes","y","on"):  return True
-    if s in ("0","false","no","n","off"): return False
-    return default
-
-def _max_for(user: str, rec: dict) -> int:
-    try:
-        return int(rec.get("max_connections", DEFAULT_MAX))
-    except Exception:
-        return DEFAULT_MAX
-
-def _touch_session(user: str) -> tuple[int, bool]:
-    """
-    Purge expired sessions, then upsert this request's session key.
-    Returns: (active_count_after_touch, existed_before_touch)
-    """
-    now = _now()
-    m = ACTIVE.setdefault(user, {})
-    # purge
-    for k, t in list(m.items()):
-        if now - t > SESSION_TTL:
-            del m[k]
-    sk = _session_key()
-    existed = sk in m
-    m[sk] = now
-    return (len(m), existed)
-
 def pick_backend_for_user(username: str):
     if not BACKENDS:
         return None
-    # Stable spread: hash username → index (sum of codepoints)
+    # Stable spread: hash username → index
     h = sum(map(ord, username)) if username else 0
     return BACKENDS[h % len(BACKENDS)]
 
@@ -105,6 +50,16 @@ def parse_basic(auth_header: str):
     except Exception:
         return (None, None)
 
+def truthy(v, default=True):
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return default
+    s = str(v).strip().lower()
+    if s in ("1","true","yes","y","on"):  return True
+    if s in ("0","false","no","n","off"): return False
+    return default
+
 @app.route("/healthz")
 def healthz():
     return "ok", 200
@@ -112,11 +67,11 @@ def healthz():
 @app.route("/auth")
 def auth():
     # Inputs from nginx (set in /_auth)
-    x_user      = request.headers.get("X-Q-User", "").strip()
-    x_pass      = request.headers.get("X-Q-Pass", "").strip()
+    x_user = request.headers.get("X-Q-User", "").strip()
+    x_pass = request.headers.get("X-Q-Pass", "").strip()
     x_path_user = request.headers.get("X-Path-User", "").strip()
-    orig_args   = request.headers.get("X-Orig-Args", "")
-    req_uri     = request.headers.get("X-Req-URI", "")  # so we can detect live .m3u8/.ts
+    orig_args = request.headers.get("X-Orig-Args", "")
+    req_uri   = request.headers.get("X-Req-URI", "")  # full request_uri (so we can detect /live/...ts)
 
     # Query fallback
     q_user = request.args.get("username", "").strip()
@@ -139,27 +94,12 @@ def auth():
         return Response(status=401)
 
     # If live==false and this exact request is for a .ts channel segment, instruct nginx to 302 to OOS_URL.
-    live_on = _truthy(stored.get("live", True), True)
+    live_on = truthy(stored.get("live", True), True)
     if (not live_on) and req_uri and CHAN_TS_RE.match(req_uri):
         logging.info("live disabled for %s -> redirect %s (req=%s)", user, OOS_URL, req_uri)
-        resp = Response(status=403)                   # nginx @auth_fail translates X-Redirect -> 302
-        resp.headers["X-Redirect"] = OOS_URL
+        resp = Response(status=403)                   # auth_request sees 403 → we convert to 302 in nginx
+        resp.headers["X-Redirect"] = OOS_URL          # nginx @auth_fail reads this
         return resp
-
-    # Enforce per-user concurrent live sessions (count only real playback: .m3u8/.ts)
-    is_live_play = bool(LIVE_REQ_RE.match(req_uri or ""))
-    if is_live_play:
-        limit = _max_for(user, stored)
-        active_after, existed = _touch_session(user)
-        # If this is a *new* session and we exceeded the limit, block with redirect hint
-        if (not existed) and active_after > limit:
-            clip = OVERLIMIT_URL or OOS_URL
-            logging.info("over-limit user=%s active=%s limit=%s -> redirect %s (req=%s)",
-                         user, active_after, limit, clip, req_uri)
-            resp = Response(status=403)
-            resp.headers["X-Redirect"] = clip
-            resp.headers["X-Overlimit"] = "1"
-            return resp
 
     # choose backend and emit headers
     be = pick_backend_for_user(user)
