@@ -68,6 +68,10 @@ server {
         return 302 {{ role_iptvservice__oos_url }};
     }
 
+    location @oos_clip {
+        return 302 {{ role_iptvservice__oos_url }};
+    }
+
     # -------- Internal auth endpoint --------
     location = /_auth {
         internal;
@@ -88,6 +92,11 @@ server {
 
     # -------- Playlists (.m3u8) ----------
     location ~* ^/(?:[^/]+/)?(live|series|movie|timeshift)/([^/]+)/([^/]+)/(.*\.m3u8)$ {
+
+        # If upstream says "not acceptable" or "not found", send the OOS clip
+        proxy_intercept_errors on;
+        error_page 404 406 = @oos_clip;
+
         set $saved_args $args;
         set $saved_user $2;
         set $saved_pass $3;
@@ -132,6 +141,9 @@ server {
 
     # -------- Segments & everything else under media paths ----------
     location ~ ^/(?:[^/]+/)?(live|series|movie|timeshift)/([^/]+)/([^/]+)/(.*)$ {
+        proxy_intercept_errors on;
+        error_page 404 406 = @oos_clip;
+
         set $saved_args $args;
         set $saved_user $2;
         set $saved_pass $3;
