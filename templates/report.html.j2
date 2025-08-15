@@ -1,42 +1,275 @@
-<table cellspacing="5" cellpadding="5" border="1">
-<tr><th colspan=6>Provider Account Summary</th></tr>
-<tr><th>Provider Account</th><th>Unique Logins</th></tr>
-{% for account, value in __sorted_total_collections %}
-<tr><td>{{ account }}</td><td>{{ value }}</td></tr>
-{% endfor %}
-</table>
-<br>
-<br>
-<table cellspacing="5" cellpadding="5" border="1">
-<tr><th colspan=6>Proxy User Summary</th></tr>
-<tr><th>Real Name</th><th>User Name</th><th>Provider</th><th>IP Address Info</th><th>User Agents</th></tr>
-{% for user in __unique_user_ips %}
-  {% set agent_list = __iptv_log | select('search', '/' ~ user.user) | map('split', '\"') | flatten | select('search', role_iptvservice__allowed_user_agents | join('|')) | unique %}
-  <tr>
-    <td valign="top">{{ role_iptvservice__credentials | map(attribute='proxy_users') | flatten | selectattr('username', '==', user.user) | map(attribute='name') | first }}</td>
-    <td valign="top">{{ user.user }}</td>
-    <td valign="top">{{ user.provider }}</td>
-    {% if user.ip_list | length < 1 %}
-      <td>N/A</td><td>N/A</td>
-    {% else %}
-      <td valign="top">
-        {%- for ip in user.ip_list | unique -%}
-          {% if role_iptvservice__known_ips[ip] is defined %}{{ role_iptvservice__known_ips[ip]['name'] }} | {{ ip }} |{% else %}{{ ip }} |{% endif %}
-          {% if __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first | length > 0 and __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first != 'NXDOMAIN' %}
-            {{ __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first }}
-          {% else %}
-            No Reverse DNS
-          {% endif %}
-           | {{ __ip_info | selectattr('ip', '==', ip) | map(attribute='org') | first }}
-          {% if loop.index < (user.ip_list | length) %}<br>{% endif %}
-        {% endfor %}
-      </td>
-      <td valign="top">
-          {% for agent in agent_list %}
-            {{ agent }}
-            {% if loop.index < (agent_list | unique | length) %}<br>{% endif %}
-          {% endfor %}
-      </td>
-    {% endif %}
-  </tr>
-{% endfor %}
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>IPTV Daily Report — {{ ansible_date_time.date }}</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #111824;
+      --muted: #8aa0b5;
+      --text: #e6edf3;
+      --accent: #6cb1ff;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --bad: #ef4444;
+      --chip: #1f2a37;
+      --table-stripe: #0f1520;
+      --border: #223043;
+    }
+    body {
+      margin:0; padding:24px;
+      font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      color: var(--text); background: var(--bg);
+    }
+    h1,h2,h3 { margin: 0 0 12px; line-height: 1.2; }
+    a { color: var(--accent); text-decoration: none; }
+    .muted { color: var(--muted); }
+    .container { max-width: 1100px; margin: 0 auto; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px; margin: 14px 0;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.02) inset, 0 6px 20px rgba(0,0,0,0.25);
+    }
+
+    /* KPI grid */
+    .kpis { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); margin-top: 12px; }
+    .kpi { background: var(--chip); border:1px solid var(--border); border-radius: 10px; padding:14px 16px; }
+    .kpi .label { font-size: 12px; color: var(--muted); letter-spacing: .02em; text-transform: uppercase; }
+    .kpi .value { font-size: 24px; margin-top: 6px; }
+
+    /* Tables */
+    table { width:100%; border-collapse: collapse; margin-top: 6px; }
+    th, td { padding:10px 12px; text-align:left; vertical-align: top; }
+    th {
+      font-weight: 600; color: #cfe3ff;
+      background: #0d1420; border-bottom: 1px solid var(--border);
+    }
+    tr:nth-child(even) td { background: var(--table-stripe); }
+    td { border-bottom: 1px solid var(--border); }
+
+    .chip { display:inline-block; padding:2px 8px; border-radius: 999px; background: var(--chip); border:1px solid var(--border); font-size:12px; color:#cfe3ff; }
+    .badge-ok { background: rgba(34,197,94,.12); color:#86efac; border-color: rgba(34,197,94,.35);}
+    .badge-warn { background: rgba(245,158,11,.12); color:#fde68a; border-color: rgba(245,158,11,.35);}
+    .badge-bad { background: rgba(239,68,68,.12); color:#fecaca; border-color: rgba(239,68,68,.35);}
+
+    ul.inline { list-style:none; padding:0; margin:0; }
+    ul.inline li { display:inline; }
+    ul.inline li+li::before { content:" · "; color: var(--muted); }
+
+    .ips { margin:0; padding:0; list-style:none; }
+    .ips li { margin: 0 0 6px; }
+    .muted-small { color: var(--muted); font-size: 12px; }
+
+    .section-title { display:flex; align-items: baseline; gap:8px; }
+    .section-title .sub { font-size: 12px; color: var(--muted); }
+    .foot { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .hr { height:1px; background: var(--border); margin: 14px 0; border-radius: 1px; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:baseline;">
+    <h1>IPTV Daily Report</h1>
+    <div class="muted">{{ ansible_date_time.date }} &nbsp;•&nbsp; {{ ansible_date_time.time }}</div>
+  </div>
+
+  <!-- KPI Summary -->
+  {% set total_users  = (__unique_user_ips | length) %}
+  {% set total_ips    = (__unique_user_ips | map(attribute='ip_list') | flatten | unique | list | length) %}
+  {% set total_lines  = (__iptv_log | length) %}
+  {% set ports_seen   = (ports_seen | default(__port_account_map | default([]) | length > 0)) %}
+  {% set has_activity = (has_activity | default(total_lines > 0)) %}
+
+  <div class="kpis">
+    <div class="kpi">
+      <div class="label">Active Users</div>
+      <div class="value">{{ total_users }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Unique IPs</div>
+      <div class="value">{{ total_ips }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Log Lines Considered</div>
+      <div class="value">{{ total_lines }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Upstream Ports Observed</div>
+      <div class="value">
+        {% if ports_seen %}
+          {{ (__port_account_map | length) }}
+        {% else %}
+          <span class="muted">n/a</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if not has_activity %}
+    <div class="panel">
+      <h2>No IPTV activity found for {{ ansible_date_time.date }}</h2>
+      <div class="muted">No player_api, xmltv, or live requests were detected in the previous day’s access log.</div>
+    </div>
+  {% endif %}
+
+  <!-- Provider Account Summary -->
+  <div class="panel">
+    <div class="section-title">
+      <h2>Provider Account Summary</h2>
+      <span class="sub">Unique login/request counts per provider account</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:55%">Provider Account</th>
+          <th style="width:15%; text-align:right">Count</th>
+          <th style="width:30%">Share</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% set total_count = (__sorted_total_collections | map('last') | sum) | default(0) %}
+      {% for account, value in __sorted_total_collections %}
+        {% set pct = (100.0 * (value | float) / (total_count | float)) if total_count > 0 else 0 %}
+        <tr>
+          <td><span class="chip">{{ account | default('unknown') }}</span></td>
+          <td style="text-align:right">{{ value }}</td>
+          <td>
+            <div style="background:#0b1320; border:1px solid var(--border); border-radius: 6px; height:10px; position:relative;">
+              <div style="position:absolute; inset:0; width:{{ '%.1f' % pct }}%; background:linear-gradient(90deg, #6cb1ff, #6fddff); border-radius:6px;"></div>
+            </div>
+            <div class="muted-small">{{ '%.1f' % pct }}%</div>
+          </td>
+        </tr>
+      {% endfor %}
+      {% if (__sorted_total_collections | length) == 0 %}
+        <tr><td colspan="3" class="muted">No provider-account activity.</td></tr>
+      {% endif %}
+      </tbody>
+    </table>
+    <div class="foot">Total: {{ total_count }}</div>
+  </div>
+
+  <!-- Proxy User Summary -->
+  <div class="panel">
+    <div class="section-title">
+      <h2>Proxy User Activity</h2>
+      <span class="sub">Real name, provider inference, IP footprint, and user agents</span>
+    </div>
+    {% set ua_re = (role_iptvservice__allowed_user_agents | default([]) | map('regex_escape') | list | join('|')) %}
+    <table>
+      <thead>
+        <tr>
+          <th style="width:20%">Real Name</th>
+          <th style="width:12%">Username</th>
+          <th style="width:12%">Provider</th>
+          <th style="width:36%">IP Address Info</th>
+          <th style="width:20%">User Agents</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for user in __unique_user_ips %}
+        {% set real_name = (role_iptvservice__credentials
+                            | map(attribute='proxy_users') | default([])
+                            | flatten
+                            | selectattr('username','==', user.user)
+                            | map(attribute='name') | list | first) %}
+        {% set agent_list = (__iptv_log
+                              | select('search', '/' ~ (user.user | regex_escape))
+                              | map('split','"') | flatten
+                              | select('search', ua_re)
+                              | map('trim') | list | unique) %}
+        <tr>
+          <td>{{ real_name | default('—') }}</td>
+          <td><span class="chip">{{ user.user }}</span></td>
+          <td>{{ user.provider | default('unknown') }}</td>
+          <td>
+            {% if (user.ip_list | length) == 0 %}
+              <span class="muted">No IPs observed.</span>
+            {% else %}
+              <ul class="ips">
+              {% for ip in user.ip_list | unique %}
+                {% set known = (role_iptvservice__known_ips[ip]['name'] if (role_iptvservice__known_ips is defined and role_iptvservice__known_ips[ip] is defined) else '') %}
+                {% set info = (__ip_info | selectattr('ip','==', ip) | list | first) %}
+                {% set rev = info.reverse | default('') %}
+                {% set org = info.org | default('') %}
+                {% set recent = info.recent | default('') %}
+                <li>
+                  <strong>{{ ip }}</strong>
+                  {% if known %}<span class="chip badge-ok" title="Known IP">{{ known }}</span>{% endif %}
+                  <div class="muted-small">
+                    {% if rev and rev != 'NXDOMAIN' %}{{ rev }}{% else %}No reverse DNS{% endif %} &nbsp;|&nbsp;
+                    {{ org if org else 'Org unknown' }} &nbsp;|&nbsp;
+                    Last seen: {{ recent if recent else '—' }}
+                  </div>
+                </li>
+              {% endfor %}
+              </ul>
+            {% endif %}
+          </td>
+          <td>
+            {% if (agent_list | length) == 0 %}
+              <span class="muted">None matched allow-list.</span>
+            {% else %}
+              <ul class="inline">
+                {% for agent in agent_list %}
+                  <li class="muted-small">{{ agent }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      {% if (__unique_user_ips | length) == 0 %}
+        <tr><td colspan="5" class="muted">No user activity detected.</td></tr>
+      {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Active Upstream Ports (optional) -->
+  {% if ports_seen %}
+  <div class="panel">
+    <div class="section-title">
+      <h2>Active Upstream Ports</h2>
+      <span class="sub">Observed backend usage mapped to provider accounts</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:20%">Port</th>
+          <th style="width:40%">Provider Account</th>
+          <th style="width:20%; text-align:right">Hits</th>
+          <th style="width:20%">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% set maxc = (__port_account_map | map(attribute='count') | max | default(0)) %}
+      {% for row in (__port_account_map | sort(attribute='count', reverse=true)) %}
+        {% set badge = 'badge-ok' if row.count > 0 else 'badge-bad' %}
+        <tr>
+          <td><span class="chip">:{{ row.port }}</span></td>
+          <td>{{ row.account | default('unknown') }}</td>
+          <td style="text-align:right">{{ row.count }}</td>
+          <td><span class="chip {{ badge }}">{{ 'active' if row.count > 0 else 'idle' }}</span></td>
+        </tr>
+      {% endfor %}
+      {% if (__port_account_map | length) == 0 %}
+        <tr><td colspan="4" class="muted">No upstream port data in access log format.</td></tr>
+      {% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="hr"></div>
+  <div class="foot">
+    Generated by role_iptvservice · Host: {{ inventory_hostname | default('') }} · Report for {{ ansible_date_time.date }}.
+  </div>
+</div>
+</body>
+</html>
