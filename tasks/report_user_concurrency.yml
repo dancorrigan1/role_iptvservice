@@ -1,11 +1,16 @@
 ---
-# Report-only per-user-per-IP concurrency using active sockets + last /live request
+# Report-only per-user-per-IP concurrency using active sockets + most-recent /live/ request
 
-# You can set these in role defaults/vars; these are safe fallbacks
-- name: "Report Concurrency | Defaults"
+# 0) Safe defaults (always define everything)
+- name: "Report Concurrency | Initialize defaults"
   ansible.builtin.set_fact:
     __nginx_access_log: "{{ role_iptvservice__nginx_access_log | default('/var/log/nginx/yiafe_access.log') }}"
     __default_user_cap: "{{ role_iptvservice__default_max_connections | default(2) }}"
+    __client_ips: []
+    __user_ip_pairs: []
+    __keys: []
+    __key_counts: {}
+    __overages: []
 
 # 1) Get current established client connections to Nginx :80
 - name: "Report Concurrency | ss :80 established"
@@ -25,17 +30,7 @@
         | unique
       }}
 
-# Short-circuit if nothing connected
-- name: "Report Concurrency | No active client sockets"
-  ansible.builtin.debug:
-    msg: "No ESTABLISHED client sockets to :80; nothing to report."
-  when: (__client_ips | length) == 0
-
-- name: "Report Concurrency | Continue only if we have client IPs"
-  ansible.builtin.meta: noop
-  when: (__client_ips | length) > 0
-
-# 3) Tail recent access log for quick lookup
+# 3) Tail recent access log (only if we have clients)
 - name: "Report Concurrency | Tail nginx access log"
   ansible.builtin.command:
     cmd: tail -n 100000 "{{ __nginx_access_log }}"
@@ -44,10 +39,8 @@
   failed_when: false
   when: (__client_ips | length) > 0
 
-# 4) Build (user, ip) pairs by finding each IP's most recent /live/ line
-#    Extract username from either:
-#     - /live/<user>/<pass>/<id>...
-#     - /<USERNAME>/live/<user>/<pass>/<id>...
+# 4) Build (user,ip) pairs from last /live/ line per IP
+#    Username extracted from /live/<user>/<pass>/... or /<USERNAME>/live/<user>/...
 - name: "Report Concurrency | Build (user,ip) pairs from log"
   ansible.builtin.set_fact:
     __user_ip_pairs: >-
@@ -63,8 +56,8 @@
       {{ out }}
   when: (__client_ips | length) > 0
 
-# 5) Create a "user|ip" key list and count occurrences
-- name: "Report Concurrency | Compose keys list"
+# 5) Count concurrent connections per (user,ip)
+- name: "Report Concurrency | Compose key list (user|ip)"
   ansible.builtin.set_fact:
     __keys: >-
       {%- set out = [] -%}
@@ -74,12 +67,12 @@
       {{ out }}
   when: (__client_ips | length) > 0
 
-- name: "Report Concurrency | Counter by (user|ip)"
+- name: "Report Concurrency | Counter by key"
   ansible.builtin.set_fact:
     __key_counts: "{{ (__keys | default([])) | community.general.counter }}"
   when: (__client_ips | length) > 0
 
-# 6) Build overages list comparing against per-user caps (__users or default)
+# 6) Compare with per-user caps and collect overages
 - name: "Report Concurrency | Detect overages"
   ansible.builtin.set_fact:
     __overages: >-
@@ -96,16 +89,15 @@
       {{ out }}
   when: (__client_ips | length) > 0
 
-# 7) Email only if something exceeded
+# 7) Notify if needed
 - name: "Report Concurrency | Compose mail body"
   ansible.builtin.set_fact:
     __mail_body: |
       Per-user concurrency over cap (observed via active sockets to :80 and latest /live/ request):
-
       {% for o in __overages %}
       - user: {{ o.user }}   ip: {{ o.ip }}   connections: {{ o.count }}   cap: {{ o.cap }}
       {% endfor %}
-  when: (__overages | length) > 0
+  when: (__overages | default([]) | length) > 0
 
 - name: "Report Concurrency | Email overages"
   community.general.mail:
@@ -116,9 +108,9 @@
     port: 25
     secure: never
     body: "{{ __mail_body }}"
-  when: (__overages | length) > 0
+  when: (__overages | default([]) | length) > 0
 
-# Optional debug when nothing exceeded
+# 8) Quiet success path
 - name: "Report Concurrency | No overages"
   ansible.builtin.debug:
     msg: "No user+IP exceeded caps (active sockets checked: {{ __client_ips | length }})"
