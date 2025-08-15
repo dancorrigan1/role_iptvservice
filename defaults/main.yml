@@ -8,7 +8,7 @@ role_iptvservice__auth_group: iptvauth
 role_iptvservice__proxy_env_dir: /etc/iptv-proxy
 role_iptvservice__proxy_user: root          # matches how you currently run iptv-proxy
 role_iptvservice__proxy_group: root
-role_iptvservice__proxy_hostname_prefix: "iptv."  # used for iptv-proxy --hostname
+# role_iptvservice__proxy_hostname_prefix: "iptv."  # used for iptv-proxy --hostname
 
 # Optional control flags
 role_iptvservice__nginx_site_name: "yiafe.com"
