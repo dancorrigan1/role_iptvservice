@@ -1,8 +1,8 @@
 ---
-# - name: Ensure nginx installed
-#   ansible.builtin.package:
-#     name: nginx
-#     state: present
+- name: Ensure nginx installed
+  ansible.builtin.package:
+    name: nginx
+    state: present
 
 - name: Render nginx site
   ansible.builtin.template:
