@@ -1,77 +1,108 @@
 ---
-- name: "Main | Build dictionary of proxy users"
+- name: Gather facts (for ansible_distribution etc.)
+  ansible.builtin.setup:
+  tags: always
+
+# Build __backends deterministically (no funky filters)
+- name: Build backends (stable order & ports)
   ansible.builtin.set_fact:
-    __proxy_users: >-
-      {%- set ns = namespace(port_count=0) -%}
-      {%- set __proxy_users = [] -%}
-      {%- for proxy in role_iptvservice__credentials -%}
-        {%- for proxy_user in proxy.proxy_users -%}
-          {%- for provider_credential in proxy.provider_credentials -%}
-            {%- set ns.port_count = ns.port_count + 1 -%}
-            {%- set users_dict = {
-              'provider_name': proxy.name,
-              'provider_url': proxy.url,
-              'proxy_name': proxy_user.name,
-              'proxy_username': proxy_user.username,
-              'proxy_pass': proxy_user.password,
-              'proxy_port': role_iptvservice__proxy_start_port + ns.port_count,
-              'xtream_account': provider_credential.account,
-              'xtream_user': provider_credential.username,
-              'xtream_pass': provider_credential.password,
-              'live': proxy_user.live | default('true'),
-              'vod': proxy_user.vod | default('true')
-            } -%}
-            {%- set _ = __proxy_users.append(users_dict) -%}
-          {%- endfor -%}
+    __backends: >-
+      {%- set out = [] -%}
+      {%- set start = role_iptvservice__proxy_start_port | int -%}
+      {%- set idx = namespace(v=0) -%}
+      {%- for prov in (role_iptvservice__credentials | sort(attribute='name')) -%}
+        {%- for cred in (prov.provider_credentials | sort(attribute='account')) -%}
+          {%- set _ = out.append({
+            'name': 'up' ~ (idx.v + 1),
+            'provider': prov.name,
+            'provider_url': prov.url,
+            'account': cred.account,
+            'xtream_user': cred.username,
+            'xtream_pass': cred.password,
+            'proxy_user': cred.account,
+            'proxy_pass': cred.account,
+            'port': start + idx.v
+          }) -%}
+          {%- set idx.v = idx.v + 1 -%}
         {%- endfor -%}
       {%- endfor -%}
-      {{ __proxy_users }}
-  tags:
-    - always
-  no_log: true
+      {{ out }}
+  tags: always
 
-- name: "Main | Include nginx task file"
+# Merge all proxy_users into a single dict the app will read
+- name: Build users dict
+  ansible.builtin.set_fact:
+    __users: >-
+      {%- set d = {} -%}
+      {%- for prov in role_iptvservice__credentials -%}
+        {%- for u in prov.proxy_users | default([]) -%}
+          {%- set _ = d.update({
+            u.username: {
+              'password': u.password,
+              'live': (u.live | default('true')) | string | lower,
+              'vod':  (u.vod  | default('true')) | string | lower
+            }
+          }) -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ d }}
+  tags: always
+
+# Continue with the rest of the role
+- name: Setup iptv-auth app
+  ansible.builtin.include_tasks:
+    file: auth.yml
+    apply:
+      tags: iptvproxy
+  tags: iptvproxy
+
+- name: "Include firewall tasks (if managed)"
+  ansible.builtin.include_tasks:
+    file: firewall.yml
+    apply:
+      tags: iptvproxy
+  when: role_iptvservice__manage_firewall | default(true) | bool
+  tags: iptvproxy
+
+- name: Setup iptv-proxy instances
+  ansible.builtin.include_tasks:
+    file: proxy.yml
+    apply:
+      tags: iptvproxy
+  tags: iptvproxy
+
+- name: Setup nginx site
   ansible.builtin.include_tasks:
     file: nginx.yml
     apply:
-      tags:
-        - iptvproxy
-  tags:
-    - iptvproxy
+      tags: iptvproxy
+  tags: iptvproxy
 
-- name: "Main | Include iptv_proxy task file"
-  ansible.builtin.include_tasks:
-    file: iptv_proxy.yml
-    apply:
-      tags:
-        - iptvproxy
-  tags:
-    - iptvproxy
-
-- name: "Main | Include dailyconnections task file"
-  ansible.builtin.include_tasks:
-    file: dailyconnections.yml
-    apply:
-      tags:
-        - dailyconnections
-  tags:
-    - dailyconnections
-
-- name: "Main | Include numconnections task file"
-  ansible.builtin.include_tasks:
-    file: numconnections.yml
-    apply:
-      tags:
-        - numconnections
-  tags:
-    - numconnections
-
-- name: "Main | Include upstram_accounts task file"
+- name: "Include upstream_accounts tasks"
   ansible.builtin.include_tasks:
     file: upstream_accounts.yml
     apply:
-      tags:
-        - upstream_accounts
-  tags:
-    - upstream_accounts
+      tags: upstream_accounts
+  tags: upstream_accounts
+
+- name: "Include numconnections tasks"
+  ansible.builtin.include_tasks:
+    file: numconnections.yml
+    apply:
+      tags: numconnections
+  tags: numconnections
+
+- name: "Include dailyconnections tasks"
+  ansible.builtin.include_tasks:
+    file: dailyconnections.yml
+    apply:
+      tags: dailyconnections
+  tags: dailyconnections
+
+- name: "Include report_concurrency tasks"
+  ansible.builtin.include_tasks:
+    file: report_user_concurrency.yml
+    apply:
+      tags: report_concurrency
+  tags: report_concurrency
 ...

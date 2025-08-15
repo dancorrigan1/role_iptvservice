@@ -3,4 +3,9 @@
   ansible.builtin.service:
     name: nginx
     state: reloaded
+
+- name: Restart iptv-auth
+  ansible.builtin.service:
+    name: iptv-auth.service
+    state: restarted
 ...

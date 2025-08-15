@@ -1,0 +1,64 @@
+---
+- name: Ensure proxy env dir exists
+  ansible.builtin.file:
+    path: "{{ role_iptvservice__proxy_env_dir }}"
+    state: directory
+    owner: "{{ role_iptvservice__proxy_user }}"
+    group: "{{ role_iptvservice__proxy_group }}"
+    mode: "0755"
+
+- name: Install systemd template for iptv-proxy
+  ansible.builtin.template:
+    src: iptv-proxy@.service.j2
+    dest: /etc/systemd/system/iptv-proxy@.service
+    mode: "0644"
+
+- name: Render env files for each backend
+  ansible.builtin.template:
+    src: proxy-env.j2
+    dest: "{{ role_iptvservice__proxy_env_dir }}/{{ item.name }}.env"
+    mode: "0644"
+  loop: "{{ __backends }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.port }})"
+
+- name: Find existing env files
+  ansible.builtin.find:
+    paths: "{{ role_iptvservice__proxy_env_dir }}"
+    patterns: "*.env"
+  register: __env_scan
+
+- name: Compute desired instance names
+  ansible.builtin.set_fact:
+    __desired_instances: "{{ __backends | map(attribute='name') | list }}"
+
+- name: Stop & disable stale instances
+  ansible.builtin.service:
+    name: "iptv-proxy@{{ item | regex_replace('\\.env$', '') }}"
+    state: stopped
+    enabled: false
+  loop: "{{ __env_scan.files | map(attribute='path') | map('basename') | difference(__desired_instances
+    | map('regex_replace', '$', '.env') | list) | map('regex_replace', '\\.env$', '') | list }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Remove stale env files
+  ansible.builtin.file:
+    path: "{{ role_iptvservice__proxy_env_dir }}/{{ item }}.env"
+    state: absent
+  loop: "{{ (__env_scan.files | map(attribute='path') | map('basename') | list)
+    | map('regex_replace', '\\.env$', '') | difference(__desired_instances) | list }}"
+  when: (__env_scan.files | length) > 0
+
+- name: Reload systemd daemon-reload
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Enable & start all desired instances
+  ansible.builtin.service:
+    name: "iptv-proxy@{{ item.name }}"
+    enabled: true
+    state: started
+  loop: "{{ __backends }}"
+  loop_control:
+    label: "{{ item.name }}"

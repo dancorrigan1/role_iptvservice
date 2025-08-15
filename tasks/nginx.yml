@@ -1,42 +1,35 @@
 ---
-- name: "IPTV Proxy | Add http user agents map block to nginx.conf"
-  ansible.builtin.blockinfile:
-    path: /etc/nginx/nginx.conf
-    marker: "# -- {mark} ANSIBLE MANAGED BLOCK --"
-    insertafter: "http {"
-    block: |
+- name: Ensure nginx installed
+  ansible.builtin.package:
+    name: nginx
+    state: present
 
-      # allowed user agents for iptv proxy
-      map $http_user_agent $iptv_agents {
-        default 0;
-        {% for agent in role_iptvservice__allowed_user_agents %}
-        "~*{{ agent }}" 1;
-        {% endfor %}
-      }
-  notify: Reload nginx
-
-- name: "IPTV Proxy | Add Let's Encrypt Config"
-  ansible.builtin.copy:
-    src: letsencrypt.conf
-    dest: /etc/nginx/snippets/
-    mode: '0644'
-    owner: root
-    group: root
-  notify: Reload nginx
-
-- name: "IPTV Proxy | Add Let's Encrypt Webroot"
-  ansible.builtin.file:
-    path: /var/www/letsencrypt
-    state: directory
-    mode: '0750'
-    owner: www-data
-    group: www-data
-  notify: Reload nginx
-
-- name: "IPTV Proxy | Copy nginx template"
+- name: Render nginx site
   ansible.builtin.template:
-    src: "{{ role_iptvservice__nginx_template }}"
-    dest: "{{ role_iptvservice__nginx_conf }}"
-    mode: '0640'
+    src: nginx-site.conf.j2
+    dest: "/etc/nginx/sites-available/{{ role_iptvservice__nginx_site_name }}"
+    mode: "0644"
   notify: Reload nginx
-...
+  vars:
+    backend_ports: "{{ __backends | map(attribute='port') | list }}"
+
+- name: Enable site
+  ansible.builtin.file:
+    src: "/etc/nginx/sites-available/{{ role_iptvservice__nginx_site_name }}"
+    dest: "/etc/nginx/sites-enabled/{{ role_iptvservice__nginx_site_name }}"
+    state: link
+  notify: Reload nginx
+
+- name: Disable default nginx site (if present)
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+- name: Config check - nginx -t
+  ansible.builtin.command: nginx -t
+  register: __nginx_test
+  changed_when: false
+
+- name: Reload nginx if not yet
+  ansible.builtin.meta: flush_handlers

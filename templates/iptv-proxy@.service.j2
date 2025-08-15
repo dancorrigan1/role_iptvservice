@@ -1,0 +1,23 @@
+[Unit]
+Description=iptv-proxy instance %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ role_iptvservice__proxy_user }}
+Group={{ role_iptvservice__proxy_group }}
+EnvironmentFile={{ role_iptvservice__proxy_env_dir }}/%i.env
+ExecStart={{ role_iptvservice__iptv_proxy_path }} \
+  --port ${PORT} \
+  --hostname ${HOSTNAME} \
+  --xtream-user ${XTREAM_USER} \
+  --xtream-password ${XTREAM_PASSWORD} \
+  --xtream-base-url ${XTREAM_BASE_URL} \
+  --user ${PROXY_USER} \
+  --password ${PROXY_PASS}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,135 @@
+---
+# Report-only per-user-per-IP concurrency using active sockets to :80 and :443
+# and the most recent /live/ request per IP from the access log.
+
+# 0) Safe defaults (always define everything)
+- name: "Report Concurrency | Initialize defaults"
+  ansible.builtin.set_fact:
+    __nginx_access_log: "{{ role_iptvservice__nginx_access_log | default('/var/log/nginx/yiafe_access.log') }}"
+    __default_user_cap: "{{ role_iptvservice__default_max_connections | default(2) }}"
+    __ss_cat: ""
+    __client_ips: []
+    __user_ip_pairs: []
+    __keys: []
+    __key_counts: {}
+    __overages: []
+
+# 1) Get current established client connections to Nginx :80
+- name: "Report Concurrency | ss :80 established"
+  ansible.builtin.command:
+    cmd: ss -Htn sport = :80 state established
+  register: __ss80
+  changed_when: false
+  failed_when: false
+
+# 2) Get current established client connections to Nginx :443
+- name: "Report Concurrency | ss :443 established"
+  ansible.builtin.command:
+    cmd: ss -Htn sport = :443 state established
+  register: __ss443
+  changed_when: false
+  failed_when: false
+
+# 3) Concatenate both outputs (makes extraction simpler)
+- name: "Report Concurrency | Concatenate ss outputs"
+  ansible.builtin.set_fact:
+    __ss_cat: "{{ (__ss80.stdout | default('')) + '\n' + (__ss443.stdout | default('')) }}"
+
+# 4) Extract client IPv4s from combined ss output (unique)
+- name: "Report Concurrency | Extract client IPv4s"
+  ansible.builtin.set_fact:
+    __client_ips: >-
+      {{
+        __ss_cat
+        | regex_findall(':(?:80|443)\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+):\\d+', multiline=True)
+        | unique
+      }}
+
+# 5) Tail recent access log (only if we have client IPs)
+- name: "Report Concurrency | Tail nginx access log"
+  ansible.builtin.command:
+    cmd: tail -n 100000 "{{ __nginx_access_log }}"
+  register: __log_tail
+  changed_when: false
+  failed_when: false
+  when: (__client_ips | length) > 0
+
+# 6) Build (user,ip) pairs from last /live/ line per IP
+#    Username extracted from /live/<user>/<pass>/... or /<USERNAME>/live/<user>/...
+- name: "Report Concurrency | Build (user,ip) pairs from log"
+  ansible.builtin.set_fact:
+    __user_ip_pairs: >-
+      {%- set out = [] -%}
+      {%- for ip in __client_ips -%}
+        {%- set lines = (__log_tail.stdout_lines | default([]))
+                        | select('match', '^' ~ ip ~ ' ')
+                        | select('search', '/live/')
+                        | list -%}
+        {%- set last = (lines | last | default('')) -%}
+        {%- set u = (last | regex_findall('/(?:[^/]+/)?live/([^/]+)/') | last | default('')) -%}
+        {%- if u | length > 0 -%}
+          {%- set _ = out.append({'user': u, 'ip': ip}) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+  when: (__client_ips | length) > 0
+
+# 7) Count concurrent connections per (user,ip)
+- name: "Report Concurrency | Compose key list (user|ip)"
+  ansible.builtin.set_fact:
+    __keys: >-
+      {%- set out = [] -%}
+      {%- for p in (__user_ip_pairs | default([])) -%}
+        {%- set _ = out.append(p.user ~ '|' ~ p.ip) -%}
+      {%- endfor -%}
+      {{ out }}
+  when: (__client_ips | length) > 0
+
+- name: "Report Concurrency | Counter by key"
+  ansible.builtin.set_fact:
+    __key_counts: "{{ (__keys | default([])) | community.general.counter }}"
+  when: (__client_ips | length) > 0
+
+# 8) Compare with per-user caps and collect overages
+- name: "Report Concurrency | Detect overages"
+  ansible.builtin.set_fact:
+    __overages: >-
+      {%- set out = [] -%}
+      {%- for k, v in (__key_counts | default({})).items() -%}
+        {%- set parts = k.split('|') -%}
+        {%- set u = parts[0] -%}
+        {%- set ip = parts[1] if parts|length > 1 else 'unknown' -%}
+        {%- set cap = (__users.get(u, {}).get('max_connections', __default_user_cap)) | int -%}
+        {%- if (v | int) > cap -%}
+          {%- set _ = out.append({'user': u, 'ip': ip, 'count': v | int, 'cap': cap}) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+  when: (__client_ips | length) > 0
+
+# 9) Notify if needed
+- name: "Report Concurrency | Compose mail body"
+  ansible.builtin.set_fact:
+    __mail_body: |
+      Per-user concurrency over cap (observed via active sockets to :80/:443 and latest /live/ request):
+      {% for o in __overages %}
+      - user: {{ o.user }}   ip: {{ o.ip }}   connections: {{ o.count }}   cap: {{ o.cap }}
+      {% endfor %}
+  when: (__overages | default([]) | length) > 0
+
+- name: "Report Concurrency | Email overages"
+  community.general.mail:
+    from: "{{ role_iptvservice__email_sender }}"
+    to: "{{ role_iptvservice__email_recipients }}"
+    subject: "IPTV concurrency over cap (per-user per-IP; ports 80/443)"
+    host: "{{ role_iptvservice__email_server }}"
+    port: 25
+    secure: never
+    body: "{{ __mail_body }}"
+  when: (__overages | default([]) | length) > 0
+
+# 10) Quiet success path
+- name: "Report Concurrency | No overages"
+  ansible.builtin.debug:
+    msg: "No user+IP exceeded caps (active sockets checked on ports 80 & 443: {{ __client_ips | length }})"
+  when: (__overages | default([]) | length) == 0
