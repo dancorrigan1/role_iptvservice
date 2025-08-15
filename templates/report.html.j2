@@ -74,7 +74,7 @@
 
   <!-- Header -->
   <div style="display:flex; justify-content:space-between; gap:16px; align-items:baseline;">
-    <h1>IPTV Daily Report</h1>
+    <h1>IPTV Daily Report</h1><br>
     <div class="muted">{{ ansible_date_time.date }} &nbsp;•&nbsp; {{ ansible_date_time.time }}</div>
   </div>
 
@@ -121,6 +121,7 @@
   <div class="panel">
     <div class="section-title">
       <h2>Provider Account Summary</h2>
+      <br>
       <span class="sub">Unique login/request counts per provider account</span>
     </div>
     <table>
@@ -158,6 +159,7 @@
   <div class="panel">
     <div class="section-title">
       <h2>Proxy User Activity</h2>
+      <br>
       <span class="sub">Real name, provider inference, IP footprint, and user agents</span>
     </div>
     {% set ua_re = (role_iptvservice__allowed_user_agents | default([]) | map('regex_escape') | list | join('|')) %}
