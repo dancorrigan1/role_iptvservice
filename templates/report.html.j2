@@ -22,10 +22,14 @@
       font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
       color: var(--text); background: var(--bg);
     }
-    h1,h2,h3 { margin: 0 0 12px; line-height: 1.2; }
+    h1,h2,h3 { margin: 0 0 8px; line-height: 1.25; }
     a { color: var(--accent); text-decoration: none; }
     .muted { color: var(--muted); }
     .container { max-width: 1100px; margin: 0 auto; }
+
+    .head { margin-bottom: 8px; }
+    .head .dt { margin-top: 6px; }
+
     .panel {
       background: var(--panel);
       border: 1px solid var(--border);
@@ -33,6 +37,9 @@
       padding: 18px 20px; margin: 14px 0;
       box-shadow: 0 0 0 1px rgba(255,255,255,0.02) inset, 0 6px 20px rgba(0,0,0,0.25);
     }
+
+    .section-title { margin-bottom: 8px; }
+    .section-title .sub { display:block; margin-top: 4px; font-size: 12px; color: var(--muted); }
 
     /* KPI grid */
     .kpis { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); margin-top: 12px; }
@@ -63,19 +70,17 @@
     .ips li { margin: 0 0 6px; }
     .muted-small { color: var(--muted); font-size: 12px; }
 
-    .section-title { display:flex; align-items: baseline; gap:8px; }
-    .section-title .sub { font-size: 12px; color: var(--muted); }
-    .foot { color: var(--muted); font-size: 12px; margin-top: 8px; }
     .hr { height:1px; background: var(--border); margin: 14px 0; border-radius: 1px; }
+    .foot { color: var(--muted); font-size: 12px; margin-top: 8px; }
   </style>
 </head>
 <body>
 <div class="container">
 
-  <!-- Header -->
-  <div style="display:flex; justify-content:space-between; gap:16px; align-items:baseline;">
-    <h1>IPTV Daily Report</h1><br>
-    <div class="muted">{{ ansible_date_time.date }} &nbsp;•&nbsp; {{ ansible_date_time.time }}</div>
+  <!-- Header (stacked lines) -->
+  <div class="head">
+    <h1>IPTV Daily Report</h1>
+    <div class="dt muted">{{ ansible_date_time.date }} &nbsp;•&nbsp; {{ ansible_date_time.time }}</div>
   </div>
 
   <!-- KPI Summary -->
@@ -121,8 +126,7 @@
   <div class="panel">
     <div class="section-title">
       <h2>Provider Account Summary</h2>
-      <br>
-      <span class="sub">Unique login/request counts per provider account</span>
+      <div class="sub">Unique login/request counts per provider account</div>
     </div>
     <table>
       <thead>
@@ -159,8 +163,7 @@
   <div class="panel">
     <div class="section-title">
       <h2>Proxy User Activity</h2>
-      <br>
-      <span class="sub">Real name, provider inference, IP footprint, and user agents</span>
+      <div class="sub">Real name, provider inference, IP footprint, and user agents</div>
     </div>
     {% set ua_re = (role_iptvservice__allowed_user_agents | default([]) | map('regex_escape') | list | join('|')) %}
     <table>
@@ -238,7 +241,7 @@
   <div class="panel">
     <div class="section-title">
       <h2>Active Upstream Ports</h2>
-      <span class="sub">Observed backend usage mapped to provider accounts</span>
+      <div class="sub">Observed backend usage mapped to provider accounts</div>
     </div>
     <table>
       <thead>
