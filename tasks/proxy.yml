@@ -47,7 +47,7 @@
     path: "{{ role_iptvservice__proxy_env_dir }}/{{ item }}.env"
     state: absent
   loop: "{{ (__env_scan.files | map(attribute='path') | map('basename') | list)
-    | map('regex_replace', '\\.env$','') | difference(__desired_instances) | list }}"
+    | map('regex_replace', '\\.env$', '') | difference(__desired_instances) | list }}"
   when: (__env_scan.files | length) > 0
 
 - name: Reload systemd daemon-reload

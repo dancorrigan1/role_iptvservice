@@ -98,4 +98,11 @@
     apply:
       tags: dailyconnections
   tags: dailyconnections
+
+- name: "Include report_concurrency tasks"
+  ansible.builtin.include_tasks:
+    file: report_user_concurrency.yml
+    apply:
+      tags: report_concurrency
+  tags: report_concurrency
 ...
