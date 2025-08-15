@@ -19,16 +19,33 @@ map $http_user_agent $ua_ok {
 
 # Prefer host header returned by auth app; else default
 map $upstream_http_x_host $proxy_host_hdr {
-    ""      iptv.{{ role_iptvservice__iptv_hostname | first }};
+    ""      {{ role_iptvservice__iptv_hostname | first }};
     default $upstream_http_x_host;
 }
 
-server {
-    listen 80;
-    server_name {{ (all_server_names | unique) | join(' ') }};
+# log_format
+log_format main_ext '$remote_addr - $remote_user [$time_local] "$request" '
+   '$status $body_bytes_sent "$http_referer" '
+   '"$http_user_agent" '
+   '$request_time $upstream_response_time $iptv_agents $upstream_addr $upstream_status';
 
-    access_log /var/log/nginx/yiafe_access.log;
-    error_log  /var/log/nginx/yiafe_error.log;
+# http / port 80
+server {
+   listen 80;
+   server_name {{ (role_iptvservice__iptv_hostname | unique) | join(' ') }};
+   return 301 https://$server_name$request_uri;
+}
+
+# https / port 443
+server {
+    listen 443 ssl;
+    server_name {{ (role_iptvservice__iptv_hostname | unique) | join(' ') }};
+    access_log /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_access.log main_ext;
+    error_log  /var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_error.log;
+
+    # SSL
+    ssl_certificate /etc/letsencrypt/live/{{ role_iptvservice__iptv_hostname | first }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ role_iptvservice__iptv_hostname | first }}/privkey.pem;
 
     # If auth_request returns 401/403, handle here (may carry redirect hint)
     error_page 401 403 = @auth_fail;
@@ -47,7 +64,7 @@ server {
     # === NO-AUTH OOS CLIP (exact match) ===
     location = /oos.ts {
         # no auth_request here; serve/redirect freely
-        return 302 https://phishbox.phisher1.com/oos.ts;
+        return 302 {{ role_iptvservice__oos_url }} ;
     }
 
     # Internal auth endpoint
@@ -101,7 +118,6 @@ server {
         sub_filter "/timeshift/$proxy_user/$proxy_pass/" "/timeshift/$display_user/$display_pass/";
 
         {% for port in backend_ports %}
-        sub_filter "http://{{ 'iptv.' + (role_iptvservice__iptv_hostname|first) }}:{{ port }}/" "/";
         sub_filter "http://{{ (role_iptvservice__iptv_hostname|first) }}:{{ port }}/" "/";
         {% endfor %}
 
@@ -150,6 +166,9 @@ server {
 
     # -------- API (player_api.php, get.php, xmltv.php, etc.) ----------
     location / {
+        if ($uri = "/") {
+          return 302 {{ role_iptvservice__root_redirect }};
+        }
         set $saved_args $args;
         set $saved_user $arg_username;
         if ($saved_user = "") { set $saved_user $path_user; }
@@ -185,14 +204,10 @@ server {
         sub_filter "\"container_extension\":null"  "\"container_extension\":\"$desired_ext\"";
 
         {% for port in backend_ports %}
-        sub_filter "http://{{ 'iptv.' + (role_iptvservice__iptv_hostname|first) }}:{{ port }}/" "http://$host/";
         sub_filter "http://{{ (role_iptvservice__iptv_hostname|first) }}:{{ port }}/" "http://$host/";
         {% endfor %}
-        sub_filter "\"url\":\"http://iptv.{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"http://$host\"";
-        sub_filter "\"url\":\"https://iptv.{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"http://$host\"";
         sub_filter "\"url\":\"http://{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"http://$host\"";
         sub_filter "\"url\":\"https://{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"http://$host\"";
-        sub_filter "\"url\":\"iptv.{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"$host\"";
         sub_filter "\"url\":\"{{ role_iptvservice__iptv_hostname | first }}\"" "\"url\":\"$host\"";
 
         {% for port in backend_ports %}
