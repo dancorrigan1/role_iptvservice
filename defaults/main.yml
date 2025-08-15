@@ -33,6 +33,3 @@ role_iptvservice__kill_mode: false
 
 role_iptvservice__nginx_log_prev_day: "/var/log/nginx/{{ role_iptvservice__iptv_hostname | first }}_access.log.1"
 ...
-
-
-...
