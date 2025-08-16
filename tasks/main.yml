@@ -62,14 +62,15 @@
           {%- set _ = d.update({
             u.username: {
               'password': u.password,
-              'live': (u.live | default('true')) | string | lower,
-              'vod':  (u.vod  | default('true')) | string | lower
+              'live': (u.live | default(true)) | string | lower,
+              'vod':  (u.vod  | default(true)) | string | lower,
+              'provider': prov.name
             }
           }) -%}
         {%- endfor -%}
       {%- endfor -%}
       {{ d }}
-  tags: always
+
 
 # Continue with the rest of the role
 - name: Setup iptv-auth app

@@ -2,9 +2,9 @@
 {% for uname, u in __users | dictsort %}
   "{{ uname }}": {
     "password": "{{ u.password }}",
-    "live": {{ ((u.live | string | lower) in ['true','1','yes','y','on']) | tojson }},
-    "vod": {{ ((u.vod  | string | lower) in ['true','1','yes','y','on']) | tojson }},
-    "max_connections": {{ u.max_connections | default(role_iptvservice__default_max_connections | default(2)) }}
+    "live": {{ (u.live|string).lower() }},
+    "vod": {{ (u.vod|string).lower() }},
+    "provider": {{ (u.provider | default('') ) | tojson }}
   }{% if not loop.last %},{% endif %}
 {% endfor %}
 }
