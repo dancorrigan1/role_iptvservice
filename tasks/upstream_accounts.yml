@@ -68,7 +68,9 @@
     label: "Displaying account"
 
 - name: Upstream Accounts | Kill Mode Activated
-  when: role_iptvservice__kill_mode | bool
+  when:
+    - role_iptvservice__kill_mode | bool
+    - __failed_upstreams | len > 0
   block:
     - name: Upstream Accounts | Get pids of iptv-proxy for failed accounts
       community.general.pids:
