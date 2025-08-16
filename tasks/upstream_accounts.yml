@@ -117,18 +117,20 @@
     - (__failed_upstreams | length) > 0
 
 # Step 2: Map failed account names -> backend ports (schema tolerant)
+# Map failed accounts -> ports from backends.json (which you already slurped to __backends_current)
 - name: Upstream Accounts | Ports for failed accounts
   ansible.builtin.set_fact:
     __ports_to_kill: >-
       {{
-        __backends_current
-        | selectattr('proxy_user', 'defined')
+        (__backends_current | default([]))
         | selectattr('port', 'defined')
-        | selectattr('proxy_user', 'in', __failed_accounts | default([]))
+        | selectattr('proxy_user', 'defined')
+        | selectattr('proxy_user', 'in', (__failed_accounts | default([])))
         | map(attribute='port')
         | list
         | unique
       }}
+
   when:
     - role_iptvservice__kill_mode | default(false) | bool
     - (__failed_upstreams | length) > 0
@@ -137,30 +139,54 @@
   ansible.builtin.debug:
     var: __ports_to_kill
 
-- name: Upstream Accounts | Find iptv-proxy PIDs by port
-  community.general.pids:
-    pattern: "{{ role_iptvservice__iptv_proxy_path | default('/usr/bin/iptv-proxy') }}.*--port {{ item }}"
-  become: true
+- name: Upstream Accounts | Find iptv-proxy PIDs by port (no psutil)
+  ansible.builtin.shell: |
+    set -o pipefail
+    pgrep -f "iptv-proxy .*--port {{ item }}" \
+    || lsof -nP -iTCP:{{ item }} -sTCP:LISTEN -t \
+    || ss -ltnp "( sport = :{{ item }} )" | awk -F'[=, ]' '/iptv-proxy/ {for(i=1;i<=NF;i++) if($i=="pid"){print $(i+1)}}' \
+    || true
+  args:
+    executable: /bin/bash
+  register: __pids_by_port
+  changed_when: false
+  failed_when: false
   loop: "{{ __ports_to_kill | default([]) }}"
   loop_control:
-    label: "Find iptv-proxy on :{{ item }}"
-  register: __pids_by_port
-  when:
-    - role_iptvservice__kill_mode | default(false) | bool
-    - (__ports_to_kill | default([]) | length) > 0
+    label: "port {{ item }}"
 
 - name: Upstream Accounts | Kill iptv-proxy PIDs
-  ansible.builtin.command:
-    cmd: "kill -9 {{ item.pids | join(' ') }}"
-  become: true
+  ansible.builtin.shell: "kill -9 {{ item.stdout_lines | join(' ') }}"
+  when: item.stdout_lines | length > 0
   loop: "{{ __pids_by_port.results | default([]) }}"
-  when:
-    - role_iptvservice__kill_mode | default(false) | bool
-    - item.pids is defined
-    - item.pids | length > 0
-  changed_when: true
   loop_control:
-    label: "Killed {{ item.pids | join(', ') }}"
+    label: "kill {{ (item.stdout_lines | join(' ')) | default('none') }}"
+  changed_when: true
+
+# - name: Upstream Accounts | Find iptv-proxy PIDs by port
+#   community.general.pids:
+#     pattern: "{{ role_iptvservice__iptv_proxy_path | default('/usr/bin/iptv-proxy') }}.*--port {{ item }}"
+#   become: true
+#   loop: "{{ __ports_to_kill | default([]) }}"
+#   loop_control:
+#     label: "Find iptv-proxy on :{{ item }}"
+#   register: __pids_by_port
+#   when:
+#     - role_iptvservice__kill_mode | default(false) | bool
+#     - (__ports_to_kill | default([]) | length) > 0
+
+# - name: Upstream Accounts | Kill iptv-proxy PIDs
+#   ansible.builtin.command:
+#     cmd: "kill -9 {{ item.pids | join(' ') }}"
+#   become: true
+#   loop: "{{ __pids_by_port.results | default([]) }}"
+#   when:
+#     - role_iptvservice__kill_mode | default(false) | bool
+#     - item.pids is defined
+#     - item.pids | length > 0
+#   changed_when: true
+#   loop_control:
+#     label: "Killed {{ item.pids | join(', ') }}"
 
 - name: Upstream Accounts | Remove iptables ACCEPT for failed ports
   ansible.builtin.iptables:
@@ -193,23 +219,11 @@
 - name: Upstream Accounts | Compute remaining backends (remove failed accounts)
   ansible.builtin.set_fact:
     __backends_remaining: >-
-      {%- set out = [] -%}
-      {%- set drop = __failed_accounts | default([]) -%}
-      {%- for b in __backends_current | default([]) -%}
-        {%- set acct = (
-              b.account
-              if (b.account is defined) else
-              (b.proxy_user
-               if (b.proxy_user is defined) else
-               (b.xtream_user
-                if (b.xtream_user is defined) else
-                None))
-            -%}
-        {%- if acct is not none and acct not in drop -%}
-          {%- set _ = out.append(b) -%}
-        {%- endif -%}
-      {%- endfor -%}
-      {{ out }}
+      {{
+        (__backends_current | default([]))
+        | rejectattr('proxy_user', 'in', (__failed_accounts | default([])))
+        | list
+      }}
   when:
     - role_iptvservice__kill_mode | default(false) | bool
     - (__failed_upstreams | length) > 0
@@ -226,6 +240,17 @@
     - (__failed_upstreams | length) > 0
   notify:
     - Restart iptv-auth
+
+- name: Upstream Accounts | Write filtered backends.json
+  ansible.builtin.copy:
+    content: "{{ __backends_remaining | to_nice_json }}"
+    dest: "{{ role_iptvservice__auth_root }}/backends.json"
+    mode: '0644'
+    backup: true
+  when:
+    - role_iptvservice__kill_mode | bool
+    - (__failed_accounts | default([])) | length > 0
+  notify: Reload nginx
 
 # ---------- Email reports ----------
 - name: Upstream Accounts | Email overloaded (warning)
