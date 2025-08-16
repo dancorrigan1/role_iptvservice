@@ -4,7 +4,7 @@
   ansible.builtin.uri:
     url: "{{ item.0.url | trim }}/player_api.php?username={{ item.1.username }}&password={{ item.1.password }}"
     method: GET
-    return_content: true               # we want .json when available
+    return_content: true
     headers:
       Accept: "application/json, */*"
     timeout: 15
@@ -18,7 +18,7 @@
   until: __probe.status is defined and __probe.status == 200
   ignore_errors: true
 
-# Normalize results robustly (no blind .active_cons deref)
+# Normalize results robustly (no blind derefs)
 - name: Upstream Accounts | Normalize results
   ansible.builtin.set_fact:
     __upstream_results: >-
@@ -48,13 +48,13 @@
       {%- endfor -%}
       {{ out }}
 
-# Convenience splits
+# Split success/failure
 - name: Upstream Accounts | Split success/failure
   ansible.builtin.set_fact:
     __successful_upstreams: "{{ __upstream_results | selectattr('ok') | list }}"
-    __failed_upstreams: "{{ __upstream_results | rejectattr('ok') | list }}"
+    __failed_upstreams:     "{{ __upstream_results | rejectattr('ok') | list }}"
 
-# Identify overloaded among successful (>=, not ==)
+# Identify overloaded among successful
 - name: Upstream Accounts | Identify overloaded successful accounts
   ansible.builtin.set_fact:
     __overloaded_upstreams: >-
@@ -67,30 +67,27 @@
       {%- endfor -%}
       {{ out }}
 
-# Simple visibility
+# Visibility
 - name: Upstream Accounts | Report successful upstreams
   ansible.builtin.debug:
-    msg: "{{ item.account }} / {{ item.username }} @ {{ item.provider_url }} :: {{ item.active_cons | default('NA')
-      }}/{{ item.max_connections | default('NA') }} active"
+    msg: "{{ item.account }} / {{ item.username }} @ {{ item.provider_url }} :: {{ item.active_cons | default('NA') }}/{{ item.max_connections | default('NA') }} active"
   loop: "{{ __successful_upstreams }}"
   loop_control:
     label: "OK {{ item.account }}"
 
 - name: Upstream Accounts | Report failed upstreams
   ansible.builtin.debug:
-    msg: "FAILED {{ item.account }} / {{ item.username }} @ {{ item.provider_url }} :: status={{ item.status }} auth={{ item.auth | default('NA')
-      }} msg={{ item.message | default('') }}"
+    msg: "FAILED {{ item.account }} / {{ item.username }} @ {{ item.provider_url }} :: status={{ item.status }} auth={{ item.auth | default('NA') }} msg={{ item.message | default('') }}"
   loop: "{{ __failed_upstreams }}"
   loop_control:
     label: "FAIL {{ item.account }}"
 
-# ---------- Kill mode: purge failed accounts ----------
-# We remove their iptv-proxy processes and drop them from backends.json so the auth app stops routing to them.
+# ---------- Kill mode pipeline ----------
 - name: Upstream Accounts | Build path to backends.json
   ansible.builtin.set_fact:
     __backends_json_path: "{{ role_iptvservice__auth_root | trim }}/backends.json"
 
-- name: Upstream Accounts | Load current backends.json
+- name: Upstream Accounts | Slurp backends.json
   ansible.builtin.slurp:
     src: "{{ __backends_json_path }}"
   register: __backends_b64
@@ -98,21 +95,28 @@
     - role_iptvservice__kill_mode | default(false) | bool
     - (__failed_upstreams | length) > 0
 
-- name: Upstream Accounts | Parse current backends.json
+- name: Upstream Accounts | Parse backends.json
   ansible.builtin.set_fact:
     __backends_current: "{{ (__backends_b64.content | b64decode | from_json) | default([], true) }}"
   when:
     - role_iptvservice__kill_mode | default(false) | bool
     - (__failed_upstreams | length) > 0
 
-# Map failed accounts -> ports from backends.json (ports are what your iptv-proxy binds to)
-- name: Upstream Accounts | Ports for failed accounts
+# IMPORTANT: split setting of __failed_accounts and __ports_to_kill
+- name: Upstream Accounts | Collect failed account names
   ansible.builtin.set_fact:
     __failed_accounts: "{{ __failed_upstreams | map(attribute='account') | list }}"
+  when:
+    - role_iptvservice__kill_mode | default(false) | bool
+    - (__failed_upstreams | length) > 0
+
+- name: Upstream Accounts | Ports for failed accounts
+  ansible.builtin.set_fact:
     __ports_to_kill: >-
       {%- set out = [] -%}
+      {%- set drop = __failed_accounts | default([]) -%}
       {%- for b in __backends_current | default([]) -%}
-        {%- if b.account in __failed_accounts -%}
+        {%- if b.account in drop -%}
           {%- set _ = out.append(b.port) -%}
         {%- endif -%}
       {%- endfor -%}
@@ -121,10 +125,9 @@
     - role_iptvservice__kill_mode | default(false) | bool
     - (__failed_upstreams | length) > 0
 
-# Kill processes by port
 - name: Upstream Accounts | Find iptv-proxy PIDs by port
   community.general.pids:
-    pattern: "/usr/bin/iptv-proxy.*--port {{ item }}"
+    pattern: "{{ role_iptvservice__iptv_proxy_path | default('/usr/bin/iptv-proxy') }}.*--port {{ item }}"
   become: true
   loop: "{{ __ports_to_kill | default([]) }}"
   loop_control:
@@ -147,7 +150,6 @@
   loop_control:
     label: "Killed {{ item.pids | join(', ') }}"
 
-# Optional: firewall adjust (if you manage it here)
 - name: Upstream Accounts | Remove iptables ACCEPT for failed ports
   ansible.builtin.iptables:
     chain: INPUT
@@ -175,7 +177,6 @@
     - role_iptvservice__kill_mode | default(false) | bool
     - role_iptvservice__manage_firewall | default(true) | bool
 
-# Write filtered backends.json (drop failed accounts) and restart auth so it re-reads
 - name: Upstream Accounts | Compute remaining backends (remove failed accounts)
   ansible.builtin.set_fact:
     __backends_remaining: >-
@@ -209,7 +210,7 @@
   community.general.mail:
     from: "{{ role_iptvservice__email_sender }}"
     to: "{{ role_iptvservice__email_recipients }}"
-    subject: "Warning: Upstreams nearing or at capacity"
+    subject: "Warning: Upstreams at/over capacity"
     host: "{{ role_iptvservice__email_server }}"
     port: 25
     secure: never
