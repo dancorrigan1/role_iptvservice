@@ -26,17 +26,17 @@
     # Helpers we can reuse while parsing the log
     # ------------------------------------------------------------
 
-    - name: "Daily Connections | Build port→account/provider maps from __backends"
+    - name: "Daily Connections | Build port→account/provider maps from __effective_backends"
       ansible.builtin.set_fact:
         __port_to_account: >-
           {%- set d = {} -%}
-          {%- for be in __backends -%}
+          {%- for be in __effective_backends -%}
             {%- set _ = d.update({ (be.port | string): be.account }) -%}
           {%- endfor -%}
           {{ d }}
         __port_to_provider: >-
           {%- set d = {} -%}
-          {%- for be in __backends -%}
+          {%- for be in __effective_backends -%}
             {%- set _ = d.update({ (be.port | string): be.provider }) -%}
           {%- endfor -%}
           {{ d }}

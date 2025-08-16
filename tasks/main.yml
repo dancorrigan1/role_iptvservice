@@ -3,10 +3,10 @@
   ansible.builtin.setup:
   tags: always
 
-# Build __backends deterministically (no funky filters)
+# Build __effective_backends deterministically (no funky filters)
 - name: Build backends (stable order & ports)
   ansible.builtin.set_fact:
-    __backends: >-
+    __effective_backends: >-
       {%- set out = [] -%}
       {%- set start = role_iptvservice__proxy_start_port | int -%}
       {%- set idx = namespace(v=0) -%}
@@ -27,6 +27,29 @@
         {%- endfor -%}
       {%- endfor -%}
       {{ out }}
+  tags: always
+
+- name: Quarantine | Load list (if present)
+  ansible.builtin.slurp:
+    src: "{{ role_iptvservice__quarantine_path }}"
+  register: __quarantine_raw
+  ignore_errors: true
+  changed_when: false
+  tags: always
+
+- name: Quarantine | Parse list
+  ansible.builtin.set_fact:
+    quarantine_accounts: >-
+      {{
+        (__quarantine_raw.content | default('') | b64decode | from_json)
+        if (__quarantine_raw is defined and __quarantine_raw is not failed and __quarantine_raw.content is defined)
+        else []
+      }}
+  tags: always
+
+- name: Backends | Apply quarantine
+  ansible.builtin.set_fact:
+    __effective_backends: "{{ __effective_backends | rejectattr('account', 'in', quarantine_accounts) | list }}"
   tags: always
 
 # Merge all proxy_users into a single dict the app will read

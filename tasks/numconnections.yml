@@ -5,13 +5,13 @@
   community.general.listen_ports_facts:
     include_non_listening: true
 
-- name: "Number Connections | Build overload summary from __backends"
+- name: "Number Connections | Build overload summary from __effective_backends"
   ansible.builtin.set_fact:
     __ports_summary: >-
       {%- set out = [] -%}
       {%- set maxc = (role_iptvservice__max_connections | int) -%}
       {%- set lip  = role_iptvservice__firewall_local_ip -%}
-      {%- for be in __backends -%}
+      {%- for be in __effective_backends -%}
         {%- set conns = (
           ansible_facts.tcp_listen
           | selectattr('state', 'equalto', 'ESTABLISHED')

@@ -50,7 +50,7 @@
     group: "{{ role_iptvservice__auth_group }}"
     mode: "0640"
   vars:
-    backend_list: "{{ __backends }}"
+    backend_list: "{{ __effective_backends }}"
   notify: Restart iptv-auth
 
 - name: Install systemd unit for iptv-auth

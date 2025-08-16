@@ -11,7 +11,7 @@
     mode: "0644"
   notify: Reload nginx
   vars:
-    backend_ports: "{{ __backends | map(attribute='port') | list }}"
+    backend_ports: "{{ __effective_backends | map(attribute='port') | list }}"
 
 - name: Enable site
   ansible.builtin.file:
