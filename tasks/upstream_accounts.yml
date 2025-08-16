@@ -1,152 +1,259 @@
 ---
+# Probe every upstream account with retries; tolerate non-200 and non-JSON
 - name: Upstream Accounts | Test Connect to Each Upstream Account (retry)
   ansible.builtin.uri:
     url: "{{ item.0.url | trim }}/player_api.php?username={{ item.1.username }}&password={{ item.1.password }}"
     method: GET
-    return_content: false
-    timeout: 10
+    return_content: true               # we want .json when available
+    headers:
+      Accept: "application/json, */*"
+    timeout: 15
+    validate_certs: false
+  register: __probe
   loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
   loop_control:
-    label: "Checking {{ item.1.account }}:{{ item.1.username }} at {{ item.0.url }}"
-  register: __upstream_test_results
-  until: (__upstream_test_results.status | default(0)) == 200
+    label: "Checking {{ item.0.name }} :: {{ item.1.account }} @ {{ item.0.url }}"
   retries: 5
   delay: 10
-  no_log: false
+  until: __probe.status is defined and __probe.status == 200
+  ignore_errors: true
 
+# Normalize results robustly (no blind .active_cons deref)
 - name: Upstream Accounts | Normalize results
   ansible.builtin.set_fact:
-    __results: >-
+    __upstream_results: >-
       {%- set out = [] -%}
-      {%- for r in __upstream_test_results.results -%}
-        {%- set _ = out.append({
-          'account': (r.item.1.account if r.item is defined else None),
-          'username': (r.item.1.username if r.item is defined else None),
-          'password': (r.item.1.password if r.item is defined else None),
-          'url': (r.item.0.url if r.item is defined else None),
-          'status': (r.status | string if r.status is defined else None),
-          'auth': (r.json.user_info.auth if r.json is defined and r.json.user_info is defined else None),
-          'active_cons': (r.json.user_info.active_cons if r.json is defined and r.json.user_info is defined else None),
-          'max_connections': (r.json.user_info.max_connections if r.json is defined and r.json.user_info is defined else None)
-        }) -%}
+      {%- for r in (__probe.results | default([])) -%}
+        {%- set prov = r.item.0 -%}
+        {%- set cred = r.item.1 -%}
+        {%- set js = (r.json if (r.json is defined and r.json is mapping) else {}) -%}
+        {%- set ui = js.get('user_info', {}) -%}
+        {%- set si = js.get('server_info', {}) -%}
+        {%- set rec = {
+              'provider': prov.name,
+              'provider_url': prov.url,
+              'account':  cred.account,
+              'username': cred.username,
+              'password': cred.password,
+              'status':   r.status | default(None),
+              'ok':       (r.status | default(0)) == 200 and (ui.get('auth') in [1, '1', True]),
+              'auth':     ui.get('auth'),
+              'active_cons': ui.get('active_cons'),
+              'max_connections': ui.get('max_connections'),
+              'server_now': si.get('time_now'),
+              'server_url': si.get('url'),
+              'message': ui.get('message') or r.msg | default('')
+            } -%}
+        {%- set _ = out.append(rec) -%}
       {%- endfor -%}
       {{ out }}
 
-- name: Upstream Accounts | Classify results
+# Convenience splits
+- name: Upstream Accounts | Split success/failure
   ansible.builtin.set_fact:
-    __failed_upstreams: >-
-      {{
-        (__results | selectattr('auth', 'defined') | selectattr('auth', 'ne', 1) | list)
-        + (__results | selectattr('status', 'equalto', '512') | list)
-      }}
-    __successful_upstreams: "{{ __results | selectattr('auth', 'equalto', 1) | list }}"
+    __successful_upstreams: "{{ __upstream_results | selectattr('ok') | list }}"
+    __failed_upstreams:     "{{ __upstream_results | rejectattr('ok') | list }}"
 
+# Identify overloaded among successful (>=, not ==)
 - name: Upstream Accounts | Identify overloaded successful accounts
   ansible.builtin.set_fact:
     __overloaded_upstreams: >-
       {%- set out = [] -%}
-      {%- for us in __successful_upstreams -%}
-        {%- if us.active_cons is defined and us.max_connections is defined
-              and (us.active_cons | int) == (us.max_connections | int) -%}
-          {%- set _ = out.append(us) -%}
+      {%- for it in __successful_upstreams -%}
+        {%- if (it.active_cons is not none) and (it.max_connections is not none)
+               and ((it.active_cons | int) >= (it.max_connections | int)) -%}
+          {%- set _ = out.append(it) -%}
         {%- endif -%}
       {%- endfor -%}
       {{ out }}
 
+# Simple visibility
 - name: Upstream Accounts | Report successful upstreams
   ansible.builtin.debug:
-    msg: "{{ item.account }}/{{ item.username }}@{{ item.url }} has {{ item.active_cons }}/{{ item.max_connections }} connections"
+    msg: "{{ item.account }} / {{ item.username }} @ {{ item.provider_url }} :: {{ item.active_cons | default('NA') }}/{{ item.max_connections | default('NA') }} active"
   loop: "{{ __successful_upstreams }}"
   loop_control:
-    label: "Displaying account"
+    label: "OK {{ item.account }}"
 
 - name: Upstream Accounts | Report failed upstreams
   ansible.builtin.debug:
-    msg: "Failed to connect to upstream account {{ item.account }}/{{ item.username }}@{{ item.url }}"
+    msg: "FAILED {{ item.account }} / {{ item.username }} @ {{ item.provider_url }} :: status={{ item.status }} auth={{ item.auth | default('NA') }} msg={{ item.message | default('') }}"
   loop: "{{ __failed_upstreams }}"
   loop_control:
-    label: "Displaying account"
+    label: "FAIL {{ item.account }}"
 
-- name: Upstream Accounts | Kill Mode Activated
+# ---------- Kill mode: purge failed accounts ----------
+# We remove their iptv-proxy processes and drop them from backends.json so the auth app stops routing to them.
+- name: Upstream Accounts | Build path to backends.json
+  ansible.builtin.set_fact:
+    __backends_json_path: "{{ role_iptvservice__auth_root | trim }}/backends.json"
+
+- name: Upstream Accounts | Load current backends.json
+  ansible.builtin.slurp:
+    src: "{{ __backends_json_path }}"
+  register: __backends_b64
   when:
-    - role_iptvservice__kill_mode | bool
-    - __failed_upstreams | len > 0
-  block:
-    - name: Upstream Accounts | Get pids of iptv-proxy for failed accounts
-      community.general.pids:
-        pattern: "--xtream-user {{ item.username }} --xtream-password {{ item.password }}"
-      become: true
-      loop: "{{ __failed_upstreams }}"
-      loop_control:
-        label: "Getting PIDs of iptv-proxy for '{{ item.account }}'"
-        index_var: __my_idx
-        extended: true
-        extended_allitems: false
-      register: __proxy_pids
+    - role_iptvservice__kill_mode | default(false) | bool
+    - (__failed_upstreams | length) > 0
 
-    - name: Upstream Accounts | Kill iptv-proxy pids for failed accounts
-      ansible.builtin.command:
-        cmd: "kill -9 {{ item.pids | join(' ') }}"
-      become: true
-      loop: "{{ __proxy_pids.results }}"
-      changed_when: true
-      when: item.pids | length > 0
+- name: Upstream Accounts | Parse current backends.json
+  ansible.builtin.set_fact:
+    __backends_current: "{{ (__backends_b64.content | b64decode | from_json) | default([], true) }}"
+  when:
+    - role_iptvservice__kill_mode | default(false) | bool
+    - (__failed_upstreams | length) > 0
 
-    - name: Upstream Accounts | Remove upstreams for failed accounts
-      ansible.builtin.replace:
-        path: "{{ role_iptvservice__nginx_conf }}"
-        regexp: '^(.*server.*{{ item.account }} -.*)$'
-        replace: '# \1'
-      loop: "{{ __failed_upstreams }}"
-      loop_control:
-        label: "Removing upstream for Account '{{ item.account }}' from NGINX Config"
-      notify: Reload nginx
+# Map failed accounts -> ports from backends.json (ports are what your iptv-proxy binds to)
+- name: Upstream Accounts | Ports for failed accounts
+  ansible.builtin.set_fact:
+    __failed_accounts: "{{ __failed_upstreams | map(attribute='account') | list }}"
+    __ports_to_kill: >-
+      {%- set out = [] -%}
+      {%- for b in __backends_current | default([]) -%}
+        {%- if b.account in __failed_accounts -%}
+          {%- set _ = out.append(b.port) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out | unique }}
+  when:
+    - role_iptvservice__kill_mode | default(false) | bool
+    - (__failed_upstreams | length) > 0
 
-- name: Upstream Accounts | Email report of overloaded accounts
+# Kill processes by port
+- name: Upstream Accounts | Find iptv-proxy PIDs by port
+  community.general.pids:
+    pattern: "/usr/bin/iptv-proxy.*--port {{ item }}"
+  become: true
+  loop: "{{ __ports_to_kill | default([]) }}"
+  loop_control:
+    label: "Find iptv-proxy on :{{ item }}"
+  register: __pids_by_port
+  when:
+    - role_iptvservice__kill_mode | default(false) | bool
+    - (__ports_to_kill | default([]) | length) > 0
+
+- name: Upstream Accounts | Kill iptv-proxy PIDs
+  ansible.builtin.command:
+    cmd: "kill -9 {{ item.pids | join(' ') }}"
+  become: true
+  loop: "{{ __pids_by_port.results | default([]) }}"
+  when:
+    - role_iptvservice__kill_mode | default(false) | bool
+    - item.pids is defined
+    - item.pids | length > 0
+  changed_when: true
+  loop_control:
+    label: "Killed {{ item.pids | join(', ') }}"
+
+# Optional: firewall adjust (if you manage it here)
+- name: Upstream Accounts | Remove iptables ACCEPT for failed ports
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "{{ item }}"
+    jump: ACCEPT
+    state: absent
+  become: true
+  loop: "{{ __ports_to_kill | default([]) }}"
+  when:
+    - role_iptvservice__kill_mode | default(false) | bool
+    - role_iptvservice__manage_firewall | default(true) | bool
+
+- name: Upstream Accounts | Add iptables REJECT for failed ports
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "{{ item }}"
+    jump: REJECT
+    reject_with: icmp-port-unreachable
+    state: present
+  become: true
+  loop: "{{ __ports_to_kill | default([]) }}"
+  when:
+    - role_iptvservice__kill_mode | default(false) | bool
+    - role_iptvservice__manage_firewall | default(true) | bool
+
+# Write filtered backends.json (drop failed accounts) and restart auth so it re-reads
+- name: Upstream Accounts | Compute remaining backends (remove failed accounts)
+  ansible.builtin.set_fact:
+    __backends_remaining: >-
+      {%- set out = [] -%}
+      {%- set drop = __failed_accounts | default([]) -%}
+      {%- for b in __backends_current | default([]) -%}
+        {%- if b.account not in drop -%}
+          {%- set _ = out.append(b) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+  when:
+    - role_iptvservice__kill_mode | default(false) | bool
+    - (__failed_upstreams | length) > 0
+
+- name: Upstream Accounts | Save backends.json without failed accounts
+  ansible.builtin.copy:
+    dest: "{{ __backends_json_path }}"
+    content: "{{ __backends_remaining | to_nice_json }}"
+    mode: '0640'
+    owner: root
+    group: root
+  when:
+    - role_iptvservice__kill_mode | default(false) | bool
+    - (__failed_upstreams | length) > 0
+  notify:
+    - Restart iptv-auth
+
+# ---------- Email reports ----------
+- name: Upstream Accounts | Email overloaded (warning)
   community.general.mail:
     from: "{{ role_iptvservice__email_sender }}"
     to: "{{ role_iptvservice__email_recipients }}"
-    subject: "Warning: Upstreams nearing capacity"
+    subject: "Warning: Upstreams nearing or at capacity"
     host: "{{ role_iptvservice__email_server }}"
     port: 25
-    subtype: html
     secure: never
+    subtype: html
     body: |-
-      <p>The following upstream accounts are in danger of being overloaded:</p>
+      <p>The following upstream accounts are at/over capacity:</p>
       <ul>
-      {% for item in __overloaded_upstreams %}
+      {% for it in __overloaded_upstreams %}
         <li>
-          <strong>Account:</strong> {{ item.account }}<br>
-          <strong>Username:</strong> {{ item.username }}<br>
-          <strong>URL:</strong> {{ item.url }}<br>
-          <strong>Active Connections:</strong> {{ item.active_cons }}<br>
-          <strong>Max Connections:</strong> {{ item.max_connections }}
+          <strong>{{ it.provider }}</strong> — {{ it.account }}
+          &nbsp;@&nbsp;{{ it.provider_url }} :
+          {{ it.active_cons }}/{{ it.max_connections }}
         </li>
       {% endfor %}
       </ul>
-  when: __overloaded_upstreams | length > 0
+  when: (__overloaded_upstreams | length) > 0
 
-- name: Upstream Accounts | Email report of failed upstream accounts
+- name: Upstream Accounts | Email failed upstreams
   community.general.mail:
     from: "{{ role_iptvservice__email_sender }}"
     to: "{{ role_iptvservice__email_recipients }}"
-    subject: "URGENT: Upstreams removed from IPTV Proxy"
+    subject: >-
+      {% if role_iptvservice__kill_mode | default(false) | bool %}
+      URGENT: Upstreams removed from IPTV Proxy
+      {% else %}
+      Alert: Upstream account(s) unreachable
+      {% endif %}
     host: "{{ role_iptvservice__email_server }}"
     port: 25
-    subtype: html
     secure: never
+    subtype: html
     body: |-
-      <p>The following upstream accounts were removed due to failed login:</p>
+      <p>The following upstream accounts failed health checks:</p>
       <ul>
-      {% for item in __failed_upstreams %}
+      {% for it in __failed_upstreams %}
         <li>
-          <strong>Account:</strong> {{ item.account }}<br>
-          <strong>Username:</strong> {{ item.username }}<br>
-          <strong>URL:</strong> {{ item.url }}<br>
-          <strong>Status:</strong> {{ item.status }}<br>
-          <strong>Auth Result:</strong> {{ item.auth if item.auth is defined else 'N/A' }}
+          <strong>{{ it.provider }}</strong> — {{ it.account }} ({{ it.username }})<br>
+          URL: {{ it.provider_url }}<br>
+          Status: {{ it.status }} | Auth: {{ it.auth | default('N/A') }}<br>
+          Msg: {{ it.message | default('') }}
         </li>
       {% endfor %}
       </ul>
-  when: __failed_upstreams | length > 0
-...
+      {% if role_iptvservice__kill_mode | default(false) | bool %}
+      <p><em>Kill mode was enabled.</em> The corresponding iptv-proxy processes were terminated,
+      ports quarantined{{ ' (iptables)' if role_iptvservice__manage_firewall | default(true) | bool else '' }},
+      and the accounts were removed from backends.json.</p>
+      {% endif %}
+  when: (__failed_upstreams | length) > 0
