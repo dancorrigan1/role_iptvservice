@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import re
+import hashlib
+from typing import Any, Dict, List, Optional, Tuple
 from flask import Flask, request, Response
 
 APP_PORT   = {{ role_iptvservice__auth_port }}
@@ -20,31 +22,51 @@ OOS_URL = {{ (role_iptvservice__oos_url | default('https://' + (role_iptvservice
 #   /<USERNAME>/live/<u>/<p>/<id>.ts
 CHAN_TS_RE = re.compile(r"^/(?:[^/]+/)?live/[^/]+/[^/]+/\d+\.ts(?:\?.*)?$", re.IGNORECASE)
 
-app = Flask(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+LOG_LEVEL = "{{ (role_iptvservice__auth_log_level | default('INFO')) | upper }}"
+logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO),
+                    format="%(asctime)s %(levelname)s %(message)s")
 
-def load_json(path, default):
+app = Flask(__name__)
+
+def load_json(path: str, default: Any) -> Any:
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return default
 
-USERS    = load_json(USERS_PATH, {})
-BACKENDS = load_json(BACKENDS_PATH, [])
+USERS: Dict[str, Dict[str, Any]] = load_json(USERS_PATH, {})
+BACKENDS: List[Dict[str, Any]] = load_json(BACKENDS_PATH, [])
 
-def pick_backend_for_user(username: str):
+def md5_index(key: str, n: int) -> int:
+    if n <= 0:
+        return 0
+    h = hashlib.md5((key or "").encode("utf-8")).hexdigest()
+    return int(h, 16) % n
+
+def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
+    """
+    Prefer a backend whose 'provider' matches the user's provider from users.json.
+    If no matching backends exist, fall back to the full list.
+    Selection within the chosen pool is stable (md5(username) % pool_size).
+    """
     if not BACKENDS:
         return None
-    # Stable spread: hash username → index
-    h = sum(map(ord, username)) if username else 0
-    return BACKENDS[h % len(BACKENDS)]
 
-def parse_basic(auth_header: str):
+    user_info = USERS.get(username, {})
+    user_provider = (user_info.get("provider") or "").strip()
+    pool = [b for b in BACKENDS if (b.get("provider") or "").strip() == user_provider] if user_provider else []
+
+    if not pool:
+        pool = BACKENDS
+
+    return pool[md5_index(username, len(pool))]
+
+def parse_basic(auth_header: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     if not auth_header or not auth_header.lower().startswith("basic "):
         return (None, None)
     try:
-        raw = base64.b64decode(auth_header.split(None, 1)[1]).decode("utf-8")
+        raw = base64.b64decode(auth_header.split(None, 1)[1]).decode("utf-8", errors="ignore")
         u, p = raw.split(":", 1)
         return (u, p)
     except Exception:
@@ -71,11 +93,11 @@ def auth():
     x_pass = request.headers.get("X-Q-Pass", "").strip()
     x_path_user = request.headers.get("X-Path-User", "").strip()
     orig_args = request.headers.get("X-Orig-Args", "")
-    req_uri   = request.headers.get("X-Req-URI", "")  # full request_uri (so we can detect /live/...ts)
+    req_uri   = request.headers.get("X-Req-URI", "")  # full request_uri (for /live/...ts detection)
 
     # Query fallback
-    q_user = request.args.get("username", "").strip()
-    q_pass = request.args.get("password", "").strip()
+    q_user = (request.args.get("username") or "").strip()
+    q_pass = (request.args.get("password") or "").strip()
 
     # Basic auth
     b_user, b_pass = parse_basic(request.headers.get("Authorization"))
@@ -85,23 +107,23 @@ def auth():
     passwd = next((x for x in [b_pass, q_pass, x_pass] if x), "")
 
     # validate user
-    if not user or user not in USERS:
+    rec = USERS.get(user)
+    if not user or rec is None:
         logging.info("auth 401 for user=%s", user or "-")
         return Response(status=401)
-    stored = USERS[user]
-    if passwd != str(stored.get("password", "")):
+    if passwd != str(rec.get("password", "")):
         logging.info("auth 401 bad pass for user=%s", user)
         return Response(status=401)
 
     # If live==false and this exact request is for a .ts channel segment, instruct nginx to 302 to OOS_URL.
-    live_on = truthy(stored.get("live", True), True)
+    live_on = truthy(rec.get("live", True), True)
     if (not live_on) and req_uri and CHAN_TS_RE.match(req_uri):
         logging.info("live disabled for %s -> redirect %s (req=%s)", user, OOS_URL, req_uri)
-        resp = Response(status=403)                   # auth_request sees 403 → we convert to 302 in nginx
-        resp.headers["X-Redirect"] = OOS_URL          # nginx @auth_fail reads this
+        resp = Response(status=403)                  # auth_request sees 403 → @auth_fail handler 302s to X-Redirect
+        resp.headers["X-Redirect"] = OOS_URL
         return resp
 
-    # choose backend and emit headers
+    # choose backend (provider-aware)
     be = pick_backend_for_user(user)
     if not be:
         logging.info("auth 503 no backends")
@@ -113,7 +135,10 @@ def auth():
     extras = []
     if orig_args:
         for kv in orig_args.split("&"):
-            if kv.startswith("username=") or kv.startswith("password=") or kv == "":
+            if not kv:
+                continue
+            k = kv.split("=",1)[0]
+            if k in ("username","password"):
                 continue
             extras.append(kv)
     extras.append(f"username={be['proxy_user']}")
@@ -132,8 +157,8 @@ def auth():
         "X-Desired-Ext": DESIRED_EXT,
     }
 
-    logging.info("auth 200 mode=user user=%s backend=%s port=%s live=%s req=%s",
-                 user, be.get("name"), be.get("port"), live_on, req_uri or "-")
+    logging.info("auth 200 user=%s provider=%s backend=%s port=%s live=%s req=%s",
+                 user, rec.get("provider","-"), be.get("name"), be.get("port"), live_on, req_uri or "-")
     return Response(status=200, headers=headers)
 
 if __name__ == "__main__":

@@ -1,10 +1,15 @@
 [
-{% for b in backend_list %}
+{% for be in __effective_backends %}
   {
-    "name": "{{ b.name }}",
-    "port": {{ b.port }},
-    "proxy_user": "{{ b.proxy_user }}",
-    "proxy_pass": "{{ b.proxy_pass }}"
+    "name": {{ ('up' ~ loop.index) | tojson }},
+    "provider": {{ be.provider | tojson }},
+    "provider_url": {{ be.provider_url | tojson }},
+    "account": {{ be.account | tojson }},
+    "xtream_user": {{ be.xtream_user | tojson }},
+    "xtream_pass": {{ be.xtream_pass | tojson }},
+    "proxy_user": {{ be.proxy_user | tojson }},
+    "proxy_pass": {{ be.proxy_pass | tojson }},
+    "port": {{ be.port | int }}
   }{% if not loop.last %},{% endif %}
 {% endfor %}
 ]
