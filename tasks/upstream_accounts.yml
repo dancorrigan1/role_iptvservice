@@ -58,7 +58,7 @@
 - name: Upstream Accounts | Split success/failure
   ansible.builtin.set_fact:
     __successful_upstreams: "{{ __upstream_results | selectattr('ok') | list }}"
-    __failed_upstreams:     "{{ __upstream_results | rejectattr('ok') | list }}"
+    __failed_upstreams: "{{ __upstream_results | rejectattr('ok') | list }}"
 
 # Identify overloaded among successful
 - name: Upstream Accounts | Identify overloaded successful accounts
@@ -76,14 +76,16 @@
 # Visibility
 - name: Upstream Accounts | Report successful upstreams
   ansible.builtin.debug:
-    msg: "{{ item.account }} / {{ item.username }} @ {{ item.provider_url }} :: {{ item.active_cons | default('NA') }}/{{ item.max_connections | default('NA') }} active"
+    msg: "{{ item.account }} / {{ item.username }} @ {{ item.provider_url }} :: {{ item.active_cons | default('NA')
+      }}/{{ item.max_connections | default('NA') }} active"
   loop: "{{ __successful_upstreams }}"
   loop_control:
     label: "OK {{ item.account }}"
 
 - name: Upstream Accounts | Report failed upstreams
   ansible.builtin.debug:
-    msg: "FAILED {{ item.account }} / {{ item.username }} @ {{ item.provider_url }} :: status={{ item.status }} auth={{ item.auth | default('NA') }} msg={{ item.message | default('') }}"
+    msg: "FAILED {{ item.account }} / {{ item.username }} @ {{ item.provider_url }} :: status={{ item.status }} auth={{ item.auth | default('NA')
+      }} msg={{ item.message | default('') }}"
   loop: "{{ __failed_upstreams }}"
   loop_control:
     label: "FAIL {{ item.account }}"
