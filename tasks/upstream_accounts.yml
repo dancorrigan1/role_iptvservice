@@ -102,7 +102,7 @@
     - role_iptvservice__kill_mode | default(false) | bool
     - (__failed_upstreams | length) > 0
 
-# IMPORTANT: split setting of __failed_accounts and __ports_to_kill
+# Step 1: Collect failed account names
 - name: Upstream Accounts | Collect failed account names
   ansible.builtin.set_fact:
     __failed_accounts: "{{ __failed_upstreams | map(attribute='account') | list }}"
@@ -110,14 +110,27 @@
     - role_iptvservice__kill_mode | default(false) | bool
     - (__failed_upstreams | length) > 0
 
+# Step 2: Map failed account names -> backend ports (schema tolerant)
 - name: Upstream Accounts | Ports for failed accounts
   ansible.builtin.set_fact:
     __ports_to_kill: >-
       {%- set out = [] -%}
       {%- set drop = __failed_accounts | default([]) -%}
       {%- for b in __backends_current | default([]) -%}
-        {%- if b.account in drop -%}
-          {%- set _ = out.append(b.port) -%}
+        {# Normalize account name field from backends.json #}
+        {%- set acct = (
+              b.account
+              if (b.account is defined) else
+              (b.proxy_user
+               if (b.proxy_user is defined) else
+               (b.xtream_user
+                if (b.xtream_user is defined) else
+                None))
+            -%}
+        {# Normalize port field as well #}
+        {%- set prt = (b.port if (b.port is defined) else (b.proxy_port if (b.proxy_port is defined) else None)) -%}
+        {%- if acct is not none and prt is not none and (acct in drop) -%}
+          {%- set _ = out.append(prt) -%}
         {%- endif -%}
       {%- endfor -%}
       {{ out | unique }}
@@ -177,13 +190,23 @@
     - role_iptvservice__kill_mode | default(false) | bool
     - role_iptvservice__manage_firewall | default(true) | bool
 
+# Remove failed accounts from backends.json (schema tolerant)
 - name: Upstream Accounts | Compute remaining backends (remove failed accounts)
   ansible.builtin.set_fact:
     __backends_remaining: >-
       {%- set out = [] -%}
       {%- set drop = __failed_accounts | default([]) -%}
       {%- for b in __backends_current | default([]) -%}
-        {%- if b.account not in drop -%}
+        {%- set acct = (
+              b.account
+              if (b.account is defined) else
+              (b.proxy_user
+               if (b.proxy_user is defined) else
+               (b.xtream_user
+                if (b.xtream_user is defined) else
+                None))
+            -%}
+        {%- if acct is not none and acct not in drop -%}
           {%- set _ = out.append(b) -%}
         {%- endif -%}
       {%- endfor -%}
