@@ -1,4 +1,10 @@
 ---
+- name: Ensure psutil is present (package name overridable)
+  ansible.builtin.package:
+    name: "{{ role_iptvservice__psutil_pkg | default('python3-psutil') }}"
+    state: present
+  become: true
+
 # Probe every upstream account with retries; tolerate non-200 and non-JSON
 - name: Upstream Accounts | Test Connect to Each Upstream Account (retry)
   ansible.builtin.uri:
