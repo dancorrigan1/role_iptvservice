@@ -114,29 +114,22 @@
 - name: Upstream Accounts | Ports for failed accounts
   ansible.builtin.set_fact:
     __ports_to_kill: >-
-      {%- set out = [] -%}
-      {%- set drop = __failed_accounts | default([]) -%}
-      {%- for b in __backends_current | default([]) -%}
-        {# Normalize account name field from backends.json #}
-        {%- set acct = (
-              b.account
-              if (b.account is defined) else
-              (b.proxy_user
-               if (b.proxy_user is defined) else
-               (b.xtream_user
-                if (b.xtream_user is defined) else
-                None))
-            -%}
-        {# Normalize port field as well #}
-        {%- set prt = (b.port if (b.port is defined) else (b.proxy_port if (b.proxy_port is defined) else None)) -%}
-        {%- if acct is not none and prt is not none and (acct in drop) -%}
-          {%- set _ = out.append(prt) -%}
-        {%- endif -%}
-      {%- endfor -%}
-      {{ out | unique }}
+      {{
+        __backends_current
+        | selectattr('proxy_user', 'defined')
+        | selectattr('port', 'defined')
+        | selectattr('proxy_user', 'in', __failed_accounts | default([]))
+        | map(attribute='port')
+        | list
+        | unique
+      }}
   when:
     - role_iptvservice__kill_mode | default(false) | bool
     - (__failed_upstreams | length) > 0
+
+- name: Upstream Accounts | Debug ports to kill
+  ansible.builtin.debug:
+    var: __ports_to_kill
 
 - name: Upstream Accounts | Find iptv-proxy PIDs by port
   community.general.pids:
