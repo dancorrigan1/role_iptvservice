@@ -139,54 +139,54 @@
   ansible.builtin.debug:
     var: __ports_to_kill
 
-- name: Upstream Accounts | Find iptv-proxy PIDs by port (no psutil)
-  ansible.builtin.shell: |
-    set -o pipefail
-    pgrep -f "iptv-proxy .*--port {{ item }}" \
-    || lsof -nP -iTCP:{{ item }} -sTCP:LISTEN -t \
-    || ss -ltnp "( sport = :{{ item }} )" | awk -F'[=, ]' '/iptv-proxy/ {for(i=1;i<=NF;i++) if($i=="pid"){print $(i+1)}}' \
-    || true
-  args:
-    executable: /bin/bash
-  register: __pids_by_port
-  changed_when: false
-  failed_when: false
-  loop: "{{ __ports_to_kill | default([]) }}"
-  loop_control:
-    label: "port {{ item }}"
-
-- name: Upstream Accounts | Kill iptv-proxy PIDs
-  ansible.builtin.shell: "kill -9 {{ item.stdout_lines | join(' ') }}"
-  when: item.stdout_lines | length > 0
-  loop: "{{ __pids_by_port.results | default([]) }}"
-  loop_control:
-    label: "kill {{ (item.stdout_lines | join(' ')) | default('none') }}"
-  changed_when: true
-
-# - name: Upstream Accounts | Find iptv-proxy PIDs by port
-#   community.general.pids:
-#     pattern: "{{ role_iptvservice__iptv_proxy_path | default('/usr/bin/iptv-proxy') }}.*--port {{ item }}"
-#   become: true
+# - name: Upstream Accounts | Find iptv-proxy PIDs by port (no psutil)
+#   ansible.builtin.shell: |
+#     set -o pipefail
+#     pgrep -f "iptv-proxy .*--port {{ item }}" \
+#     || lsof -nP -iTCP:{{ item }} -sTCP:LISTEN -t \
+#     || ss -ltnp "( sport = :{{ item }} )" | awk -F'[=, ]' '/iptv-proxy/ {for(i=1;i<=NF;i++) if($i=="pid"){print $(i+1)}}' \
+#     || true
+#   args:
+#     executable: /bin/bash
+#   register: __pids_by_port
+#   changed_when: false
+#   failed_when: false
 #   loop: "{{ __ports_to_kill | default([]) }}"
 #   loop_control:
-#     label: "Find iptv-proxy on :{{ item }}"
-#   register: __pids_by_port
-#   when:
-#     - role_iptvservice__kill_mode | default(false) | bool
-#     - (__ports_to_kill | default([]) | length) > 0
+#     label: "port {{ item }}"
 
 # - name: Upstream Accounts | Kill iptv-proxy PIDs
-#   ansible.builtin.command:
-#     cmd: "kill -9 {{ item.pids | join(' ') }}"
-#   become: true
+#   ansible.builtin.shell: "kill -9 {{ item.stdout_lines | join(' ') }}"
+#   when: item.stdout_lines | length > 0
 #   loop: "{{ __pids_by_port.results | default([]) }}"
-#   when:
-#     - role_iptvservice__kill_mode | default(false) | bool
-#     - item.pids is defined
-#     - item.pids | length > 0
-#   changed_when: true
 #   loop_control:
-#     label: "Killed {{ item.pids | join(', ') }}"
+#     label: "kill {{ (item.stdout_lines | join(' ')) | default('none') }}"
+#   changed_when: true
+
+- name: Upstream Accounts | Find iptv-proxy PIDs by port
+  community.general.pids:
+    pattern: "{{ role_iptvservice__iptv_proxy_path | default('/usr/bin/iptv-proxy') }}.*--port {{ item }}"
+  become: true
+  loop: "{{ __ports_to_kill | default([]) }}"
+  loop_control:
+    label: "Find iptv-proxy on :{{ item }}"
+  register: __pids_by_port
+  when:
+    - role_iptvservice__kill_mode | default(false) | bool
+    - (__ports_to_kill | default([]) | length) > 0
+
+- name: Upstream Accounts | Kill iptv-proxy PIDs
+  ansible.builtin.command:
+    cmd: "kill -9 {{ item.pids | join(' ') }}"
+  become: true
+  loop: "{{ __pids_by_port.results | default([]) }}"
+  when:
+    - role_iptvservice__kill_mode | default(false) | bool
+    - item.pids is defined
+    - item.pids | length > 0
+  changed_when: true
+  loop_control:
+    label: "Killed {{ item.pids | join(', ') }}"
 
 - name: Upstream Accounts | Remove iptables ACCEPT for failed ports
   ansible.builtin.iptables:
