@@ -18,7 +18,7 @@
     src: proxy-env.j2
     dest: "{{ role_iptvservice__proxy_env_dir }}/{{ item.name }}.env"
     mode: "0644"
-  loop: "{{ __backends }}"
+  loop: "{{ __effective_backends }}"
   loop_control:
     label: "{{ item.name }} ({{ item.port }})"
 
@@ -30,7 +30,7 @@
 
 - name: Compute desired instance names
   ansible.builtin.set_fact:
-    __desired_instances: "{{ __backends | map(attribute='name') | list }}"
+    __desired_instances: "{{ __effective_backends | map(attribute='name') | list }}"
 
 - name: Stop & disable stale instances
   ansible.builtin.service:
@@ -59,6 +59,6 @@
     name: "iptv-proxy@{{ item.name }}"
     enabled: true
     state: started
-  loop: "{{ __backends }}"
+  loop: "{{ __effective_backends }}"
   loop_control:
     label: "{{ item.name }}"
