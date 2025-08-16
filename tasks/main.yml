@@ -27,7 +27,7 @@
         {%- endfor -%}
       {%- endfor -%}
       {{ out }}
-  tags: always
+  tags: [always, iptvproxy]
 
 - name: Quarantine | Load list (if present)
   ansible.builtin.slurp:
@@ -70,7 +70,7 @@
         {%- endfor -%}
       {%- endfor -%}
       {{ d }}
-
+  tags: [always, iptvproxy]
 
 # Continue with the rest of the role
 - name: Setup iptv-auth app
