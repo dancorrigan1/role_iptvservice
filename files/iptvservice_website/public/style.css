@@ -1,0 +1,60 @@
+:root{--bg:#0b0f14;--panel:#121821;--muted:#7a8aa0;--card:#0f141b;--border:#1f2a38;--text:#e7edf5;--accent:#4da3ff;--ok:#34d399;--danger:#ff5d5d;--warn:#f59e0b;--shadow:0 10px 30px rgba(0,0,0,.35)}
+@media (prefers-color-scheme: light){:root{--bg:#f6f8fb;--panel:#fff;--muted:#5a6a7f;--card:#fff;--border:#e5e9f0;--text:#0b0f14;--accent:#2563eb;--ok:#16a34a;--danger:#dc2626;--warn:#d97706;--shadow:0 10px 20px rgba(0,0,0,.08)}}
+*{box-sizing:border-box}html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial}
+.header{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,var(--panel),rgba(0,0,0,0));backdrop-filter:saturate(1.1) blur(8px);border-bottom:1px solid var(--border)}
+.header-inner{max-width:1200px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.h-title{display:flex;align-items:center;gap:10px;font-weight:700}
+.badge{font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:999px;color:var(--muted)}
+.container{max-width:1200px;margin:0 auto;padding:24px}
+.toolbar{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0 16px}
+.group{display:flex;gap:8px;flex-wrap:wrap}
+.tag{font-size:12px;border:1px solid var(--border);border-radius:999px;padding:4px 10px;color:var(--muted);background:var(--panel)}
+.input,select{width:100%;max-width:380px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--text)}
+.btn{appearance:none;border:1px solid var(--border);background:var(--card);color:var(--text);padding:10px 14px;border-radius:12px;cursor:pointer;box-shadow:var(--shadow);transition:.15s transform ease,.15s background ease}
+.btn:hover{transform:translateY(-1px)}.btn:active{transform:translateY(0)}
+.btn-primary{background:var(--accent);border-color:transparent;color:#fff}
+.btn-ghost{background:transparent}
+.btn-success{background:var(--ok);border-color:transparent;color:#00130c}
+.btn-danger{background:var(--danger);border-color:transparent;color:#fff}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+.card{grid-column:span 12;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.card-header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border);gap:10px}
+.card-title{display:flex;align-items:center;gap:10px;font-weight:700}
+.card-sub{color:var(--muted);font-size:12px}
+.card-body{padding:16px}
+.collapsed .card-body{display:none}
+.chev{transition:.15s transform ease}
+.collapsed .chev{transform:rotate(-90deg)}
+.row{display:grid;grid-template-columns:repeat(12,1fr);gap:12px;margin-bottom:10px}
+.row .col-6{grid-column:span 6}.row .col-4{grid-column:span 4}.row .col-2{grid-column:span 2}
+.stack{display:flex;flex-direction:column;gap:10px}
+.inline{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.count-pill{font-size:12px;background:var(--panel);border:1px solid var(--border);padding:4px 8px;border-radius:8px;color:var(--muted)}
+.t-row{position:relative;display:grid;grid-template-columns:repeat(12,1fr);gap:8px;align-items:center;padding:8px;border:1px solid var(--border);border-radius:12px;background:var(--panel)}
+.col{min-width:0}
+.span-1{grid-column:span 1}.span-2{grid-column:span 2}.span-3{grid-column:span 3}.span-4{grid-column:span 4}
+.end{justify-self:end}
+.warn{color:var(--warn)}
+.hidden{display:none}
+.footer-space{height:24px}
+.user-row.live-on{box-shadow:inset 4px 0 0 var(--ok)}
+.user-row.live-off{box-shadow:inset 4px 0 0 var(--danger)}
+.user-row.live-on .live-cell select{border-color:var(--ok)}
+.user-row.live-off .live-cell select{border-color:var(--danger)}
+@media (max-width:900px){
+  .row .col-6,.row .col-4,.row .col-2{grid-column:span 12}
+  .t-row{grid-template-columns:repeat(12,1fr)}
+}
+.table-live {
+  table-layout: fixed;
+  width: 100%;
+}
+.table-live td, .table-live th {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.table-live th.ua, .table-live td.ua { width: 28rem; } /* user agent wide */
+/* in your CSS */
+.ip-note { color: var(--muted,#7a8aa0); font-size: 0.9em; }
+.muted { color: var(--muted,#7a8aa0); }
