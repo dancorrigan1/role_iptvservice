@@ -47,8 +47,10 @@ def md5_index(key: str, n: int) -> int:
 def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
     """
     Prefer a backend whose 'provider' matches the user's provider from users.json.
+    Within that pool, choose the backend with the lowest load ratio
+    (active_cons / max_connections) when this information is available.
     If no matching backends exist, fall back to the full list.
-    Selection within the chosen pool is stable (md5(username) % pool_size).
+    Selection among equally loaded backends is stable (md5(username) % pool_size).
     """
     if not BACKENDS:
         return None
@@ -60,7 +62,20 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
     if not pool:
         pool = BACKENDS
 
-    return pool[md5_index(username, len(pool))]
+    def load_ratio(b: Dict[str, Any]) -> float:
+        try:
+            cur = int(b.get("active_cons") or 0)
+            maxc = int(b.get("max_connections") or 0)
+            if maxc > 0:
+                return cur / maxc
+        except Exception:
+            pass
+        return 1.0  # treat unknown as fully loaded
+
+    available = [b for b in pool if load_ratio(b) < 1.0] or pool
+    min_load = min(load_ratio(b) for b in available)
+    candidates = [b for b in available if load_ratio(b) == min_load]
+    return candidates[md5_index(username, len(candidates))]
 
 def parse_basic(auth_header: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     if not auth_header or not auth_header.lower().startswith("basic "):
