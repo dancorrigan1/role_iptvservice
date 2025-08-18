@@ -51,14 +51,32 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
     (active_cons / max_connections) when this information is available.
     If no matching backends exist, fall back to the full list.
     Selection among equally loaded backends is stable (md5(username) % pool_size).
+    Reload backend metadata each call so routing decisions reflect current
+    connection counts. Log the score for every candidate and the chosen
+    backend for observability.
     """
+    global BACKENDS
+    fresh = load_json(BACKENDS_PATH, BACKENDS)
+    if fresh:
+        # merge with local counts to avoid dropping in-memory increments
+        by_name = {b.get("name"): b for b in BACKENDS}
+        for fb in fresh:
+            name = fb.get("name")
+            if name in by_name:
+                try:
+                    fb_ac = int(fb.get("active_cons") or 0)
+                    local_ac = int(by_name[name].get("active_cons") or 0)
+                    if local_ac > fb_ac:
+                        fb["active_cons"] = local_ac
+                except Exception:
+                    pass
+        BACKENDS = fresh
     if not BACKENDS:
         return None
 
     user_info = USERS.get(username, {})
     user_provider = (user_info.get("provider") or "").strip()
     pool = [b for b in BACKENDS if (b.get("provider") or "").strip() == user_provider] if user_provider else []
-
     if not pool:
         pool = BACKENDS
 
@@ -72,10 +90,29 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
             pass
         return 1.0  # treat unknown as fully loaded
 
-    available = [b for b in pool if load_ratio(b) < 1.0] or pool
-    min_load = min(load_ratio(b) for b in available)
-    candidates = [b for b in available if load_ratio(b) == min_load]
-    return candidates[md5_index(username, len(candidates))]
+    scores = [(b, load_ratio(b)) for b in pool]
+    available_scores = [(b, s) for b, s in scores if s < 1.0] or scores
+    min_load = min(s for _, s in available_scores)
+    candidates = [b for b, s in available_scores if s == min_load]
+    choice = candidates[md5_index(username, len(candidates))]
+
+    # reflect the new connection locally to reduce chance of overloading before
+    # external metrics update active_cons
+    try:
+        choice["active_cons"] = int(choice.get("active_cons") or 0) + 1
+    except Exception:
+        pass
+
+    logging.info(
+        "backend scores user=%s provider=%s %s -> %s %.3f",
+        username,
+        user_provider or "-",
+        " ".join(f"{b['name']}={s:.3f}" for b, s in scores),
+        choice.get("name"),
+        next(s for b, s in scores if b is choice),
+    )
+
+    return choice
 
 def parse_basic(auth_header: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     if not auth_header or not auth_header.lower().startswith("basic "):
@@ -109,6 +146,9 @@ def auth():
     x_path_user = request.headers.get("X-Path-User", "").strip()
     orig_args = request.headers.get("X-Orig-Args", "")
     req_uri   = request.headers.get("X-Req-URI", "")  # full request_uri (for /live/...ts detection)
+
+    global USERS
+    USERS = load_json(USERS_PATH, USERS)
 
     # Query fallback
     q_user = (request.args.get("username") or "").strip()
