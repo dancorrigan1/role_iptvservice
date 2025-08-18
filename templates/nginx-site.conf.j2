@@ -2,7 +2,7 @@
 # Supports: http://HOST , http://iptv.HOST , http://HOST/<username>
 
 {% set first_host = (role_iptvservice__iptv_hostname | first) | trim %}
-{% set all_server_names = (role_iptvservice__iptv_hostname | unique %}
+{% set all_server_names = role_iptvservice__iptv_hostname | unique %}
 
 map $request_uri $path_user { "~^/([^/?]+)" $1; default ""; }
 
