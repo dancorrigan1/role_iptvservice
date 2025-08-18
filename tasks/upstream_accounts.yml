@@ -19,6 +19,7 @@
   loop: "{{ role_iptvservice__credentials | subelements('provider_credentials') }}"
   loop_control:
     label: "Checking {{ item.0.name }} :: {{ item.1.account }} @ {{ item.0.url }}"
+    pause: 5
   retries: 5
   delay: 10
   until: __probe.status is defined and __probe.status == 200
