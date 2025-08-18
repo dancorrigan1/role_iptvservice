@@ -4,7 +4,8 @@ import json
 import logging
 import os
 import re
-import hashlib
+import fcntl
+import random
 from typing import Any, Dict, List, Optional, Tuple
 from flask import Flask, request, Response
 
@@ -38,29 +39,69 @@ def load_json(path: str, default: Any) -> Any:
 USERS: Dict[str, Dict[str, Any]] = load_json(USERS_PATH, {})
 BACKENDS: List[Dict[str, Any]] = load_json(BACKENDS_PATH, [])
 
-def md5_index(key: str, n: int) -> int:
-    if n <= 0:
-        return 0
-    h = hashlib.md5((key or "").encode("utf-8")).hexdigest()
-    return int(h, 16) % n
-
 def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
     """
     Prefer a backend whose 'provider' matches the user's provider from users.json.
+    Within that pool, choose the backend with the lowest load ratio
+    (active_cons / max_connections) when this information is available.
     If no matching backends exist, fall back to the full list.
-    Selection within the chosen pool is stable (md5(username) % pool_size).
+    Selection among equally loaded backends is random.
+    Reload backend metadata under a file lock so routing decisions reflect
+    current connection counts even with concurrent workers. Log the score for
+    every candidate and the chosen backend for observability.
     """
-    if not BACKENDS:
+    global BACKENDS
+    user_provider = ""
+    scores: List[Tuple[Dict[str, Any], float]] = []
+    choice: Optional[Dict[str, Any]] = None
+    try:
+        with open(BACKENDS_PATH, "r+", encoding="utf-8") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                BACKENDS = json.load(f)
+            except Exception:
+                BACKENDS = []
+            if not BACKENDS:
+                return None
+
+            user_info = USERS.get(username, {})
+            user_provider = (user_info.get("provider") or "").strip()
+            pool = [b for b in BACKENDS if (b.get("provider") or "").strip() == user_provider] if user_provider else []
+            if not pool:
+                pool = BACKENDS
+
+            def load_ratio(b: Dict[str, Any]) -> float:
+                try:
+                    cur = int(b.get("active_cons") or 0)
+                    maxc = int(b.get("max_connections") or 0)
+                    if maxc > 0:
+                        return cur / maxc
+                except Exception:
+                    pass
+                return 1.0  # treat unknown as fully loaded
+
+            scores = [(b, load_ratio(b)) for b in pool]
+            available_scores = [(b, s) for b, s in scores if s < 1.0] or scores
+            min_load = min(s for _, s in available_scores)
+            candidates = [b for b, s in available_scores if s == min_load]
+            choice = random.choice(candidates)
+            choice["active_cons"] = int(choice.get("active_cons") or 0) + 1
+            f.seek(0)
+            json.dump(BACKENDS, f, indent=2)
+            f.truncate()
+    except Exception:
         return None
 
-    user_info = USERS.get(username, {})
-    user_provider = (user_info.get("provider") or "").strip()
-    pool = [b for b in BACKENDS if (b.get("provider") or "").strip() == user_provider] if user_provider else []
+    logging.info(
+        "backend scores user=%s provider=%s %s -> %s %.3f",
+        username,
+        user_provider or "-",
+        " ".join(f"{b['name']}={s:.3f}" for b, s in scores),
+        choice.get("name") if choice else "-",
+        next((s for b, s in scores if b is choice), 0.0) if choice else 0.0,
+    )
 
-    if not pool:
-        pool = BACKENDS
-
-    return pool[md5_index(username, len(pool))]
+    return choice
 
 def parse_basic(auth_header: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     if not auth_header or not auth_header.lower().startswith("basic "):
@@ -94,6 +135,9 @@ def auth():
     x_path_user = request.headers.get("X-Path-User", "").strip()
     orig_args = request.headers.get("X-Orig-Args", "")
     req_uri   = request.headers.get("X-Req-URI", "")  # full request_uri (for /live/...ts detection)
+
+    global USERS
+    USERS = load_json(USERS_PATH, USERS)
 
     # Query fallback
     q_user = (request.args.get("username") or "").strip()
