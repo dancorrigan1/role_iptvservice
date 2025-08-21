@@ -13,6 +13,7 @@ APP_PORT   = {{ role_iptvservice__auth_port }}
 AUTH_ROOT  = "{{ role_iptvservice__auth_root }}"
 USERS_PATH = os.path.join(AUTH_ROOT, "users.json")
 BACKENDS_PATH = os.path.join(AUTH_ROOT, "backends.json")
+USER_BACKENDS_PATH = os.path.join(AUTH_ROOT, "user_backends.json")
 
 DESIRED_EXT = "{{ role_iptvservice__desired_ext }}"
 # Where to send viewers if live==false and they request a channel segment:
@@ -38,6 +39,7 @@ def load_json(path: str, default: Any) -> Any:
 
 USERS: Dict[str, Dict[str, Any]] = load_json(USERS_PATH, {})
 BACKENDS: List[Dict[str, Any]] = load_json(BACKENDS_PATH, [])
+USER_BACKENDS: Dict[str, str] = load_json(USER_BACKENDS_PATH, {})
 
 def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
     """
@@ -50,17 +52,24 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
     current connection counts even with concurrent workers. Log the score for
     every candidate and the chosen backend for observability.
     """
-    global BACKENDS
+    global BACKENDS, USER_BACKENDS
     user_provider = ""
     scores: List[Tuple[Dict[str, Any], float]] = []
     choice: Optional[Dict[str, Any]] = None
     try:
-        with open(BACKENDS_PATH, "r+", encoding="utf-8") as f:
+        with open(BACKENDS_PATH, "r+", encoding="utf-8") as f, \
+             open(USER_BACKENDS_PATH, "a+", encoding="utf-8") as uf:
             fcntl.flock(f, fcntl.LOCK_EX)
+            fcntl.flock(uf, fcntl.LOCK_EX)
+            uf.seek(0)
             try:
                 BACKENDS = json.load(f)
             except Exception:
                 BACKENDS = []
+            try:
+                USER_BACKENDS = json.load(uf)
+            except Exception:
+                USER_BACKENDS = {}
             if not BACKENDS:
                 return None
 
@@ -82,13 +91,27 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
 
             scores = [(b, load_ratio(b)) for b in pool]
             available_scores = [(b, s) for b, s in scores if s < 1.0] or scores
-            min_load = min(s for _, s in available_scores)
-            candidates = [b for b, s in available_scores if s == min_load]
-            choice = random.choice(candidates)
+
+            last_name = USER_BACKENDS.get(username)
+            if last_name:
+                for b, s in scores:
+                    if b.get("name") == last_name and s < 1.0:
+                        choice = b
+                        break
+
+            if choice is None:
+                min_load = min(s for _, s in available_scores)
+                candidates = [b for b, s in available_scores if s == min_load]
+                choice = random.choice(candidates)
+
             choice["active_cons"] = int(choice.get("active_cons") or 0) + 1
+            USER_BACKENDS[username] = choice.get("name")
             f.seek(0)
             json.dump(BACKENDS, f, indent=2)
             f.truncate()
+            uf.seek(0)
+            json.dump(USER_BACKENDS, uf, indent=2)
+            uf.truncate()
     except Exception:
         return None
 

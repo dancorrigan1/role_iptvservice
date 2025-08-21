@@ -53,6 +53,15 @@
     backend_list: "{{ __effective_backends }}"
   notify: Restart iptv-auth
 
+- name: Ensure user_backends.json exists
+  ansible.builtin.copy:
+    dest: "{{ role_iptvservice__auth_root }}/user_backends.json"
+    content: "{}"
+    owner: "{{ role_iptvservice__auth_user }}"
+    group: "{{ role_iptvservice__auth_group }}"
+    mode: "0640"
+    force: false
+
 - name: Install systemd unit for iptv-auth
   ansible.builtin.template:
     src: iptv-auth.service.j2
