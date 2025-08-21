@@ -47,7 +47,8 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
     Within that pool, choose the backend with the lowest load ratio
     (active_cons / max_connections) when this information is available.
     If no matching backends exist, fall back to the full list.
-    Selection among equally loaded backends is random.
+    Selection among equally loaded backends is random, but if the user has a
+    previously selected backend with comparable load it will be reused.
     Reload backend metadata under a file lock so routing decisions reflect
     current connection counts even with concurrent workers. Log the score for
     every candidate and the chosen backend for observability.
@@ -90,17 +91,19 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
                 return 1.0  # treat unknown as fully loaded
 
             scores = [(b, load_ratio(b)) for b in pool]
-            available_scores = [(b, s) for b, s in scores if s < 1.0] or scores
+            available_scores = [(b, s) for b, s in scores if s < 1.0]
+            if not available_scores:
+                available_scores = scores
+            min_load = min(s for _, s in available_scores)
 
             last_name = USER_BACKENDS.get(username)
             if last_name:
                 for b, s in scores:
-                    if b.get("name") == last_name and s < 1.0:
+                    if b.get("name") == last_name and s <= min_load:
                         choice = b
                         break
 
             if choice is None:
-                min_load = min(s for _, s in available_scores)
                 candidates = [b for b, s in available_scores if s == min_load]
                 choice = random.choice(candidates)
 
