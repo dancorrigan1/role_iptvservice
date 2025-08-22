@@ -14,6 +14,7 @@ AUTH_ROOT  = "{{ role_iptvservice__auth_root }}"
 USERS_PATH = os.path.join(AUTH_ROOT, "users.json")
 BACKENDS_PATH = os.path.join(AUTH_ROOT, "backends.json")
 USER_BACKENDS_PATH = os.path.join(AUTH_ROOT, "user_backends.json")
+STATUS_PATH = os.path.join(AUTH_ROOT, "status.json")
 
 DESIRED_EXT = "{{ role_iptvservice__desired_ext }}"
 # Where to send viewers if live==false and they request a channel segment:
@@ -75,6 +76,15 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
                     USER_BACKENDS = json.load(uf)
                 except Exception:
                     USER_BACKENDS = {}
+                status_by_account: Dict[str, Dict[str, Any]] = {}
+                try:
+                    status_data = load_json(STATUS_PATH, {})
+                    for us in status_data.get("upstreams", []):
+                        acct = (us.get("account") or "").strip()
+                        if acct:
+                            status_by_account[acct] = us
+                except Exception:
+                    pass
                 if not BACKENDS:
                     return None
 
@@ -84,46 +94,62 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
                 if not pool:
                     pool = BACKENDS
 
-                def load_ratio(b: Dict[str, Any]) -> float:
+                def backend_usage(b: Dict[str, Any]) -> Tuple[int, int, float]:
+                    """Return active, max and free-capacity ratio for a backend."""
+                    cur = 0
+                    maxc = 0
                     try:
-                        cur = int(b.get("active_cons") or 0)
-                        maxc = int(b.get("max_connections") or 0)
-                        if maxc > 0:
-                            return cur / maxc
+                        cur = int(b.get("active_cons") or b.get("active") or 0)
                     except Exception:
                         pass
-                    return 1.0  # treat unknown as fully loaded
-
-                def has_capacity(b: Dict[str, Any]) -> bool:
                     try:
-                        cur = int(b.get("active_cons") or 0)
-                        maxc = int(b.get("max_connections") or 0)
-                        return maxc <= 0 or cur < maxc
+                        maxc = int(b.get("max_connections") or b.get("max") or 0)
                     except Exception:
-                        return True
+                        pass
+                    info = status_by_account.get((b.get("account") or "").strip())
+                    if info:
+                        try:
+                            cur = int(info.get("active") or cur)
+                        except Exception:
+                            pass
+                        try:
+                            maxc = int(info.get("max_connections") or info.get("max") or maxc)
+                        except Exception:
+                            pass
+                    score = (maxc - cur) / maxc if maxc > 0 else 1.0
+                    return cur, maxc, score
 
-                scores = [(b, load_ratio(b)) for b in pool]
+                def has_capacity(cur: int, maxc: int) -> bool:
+                    return maxc <= 0 or cur < maxc
+
+                scores: List[Tuple[Dict[str, Any], int, int, float]] = []
+                for b in pool:
+                    cur, maxc, score = backend_usage(b)
+                    scores.append((b, cur, maxc, score))
 
                 last_name = USER_BACKENDS.get(username)
                 if last_name:
-                    for b in pool:
-                        if b.get("name") == last_name and has_capacity(b):
+                    for b, cur, maxc, _ in scores:
+                        if b.get("name") == last_name and has_capacity(cur, maxc):
                             choice = b
                             break
 
                 if choice is None:
-                    available_scores = [(b, s) for b, s in scores if has_capacity(b)]
+                    available_scores = [(b, s) for b, cur, maxc, s in scores if has_capacity(cur, maxc) and s > 0]
                     if not available_scores:
-                        available_scores = scores
-                    min_load = min(s for _, s in available_scores)
-                    candidates = [b for b, s in available_scores if s == min_load]
+                        available_scores = [(b, s) for b, _, _, s in scores]
+                    max_free = max(s for _, s in available_scores)
+                    candidates = [b for b, s in available_scores if s == max_free]
                     choice = random.choice(candidates)
 
-                choice["active_cons"] = int(choice.get("active_cons") or 0) + 1
                 USER_BACKENDS[username] = choice.get("name")
-                f.seek(0)
-                json.dump(BACKENDS, f, indent=2)
-                f.truncate()
+                if not status_by_account:
+                    cur_active = next((cur for b, cur, _, _ in scores if b is choice), 0) + 1
+                    choice["active_cons"] = cur_active
+                    choice["active"] = cur_active
+                    f.seek(0)
+                    json.dump(BACKENDS, f, indent=2)
+                    f.truncate()
                 uf.seek(0)
                 json.dump(USER_BACKENDS, uf, indent=2)
                 uf.truncate()
@@ -134,9 +160,12 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
         "backend scores user=%s provider=%s %s -> %s %.3f",
         username,
         user_provider or "-",
-        " ".join(f"{b['name']}={s:.3f}" for b, s in scores),
+        " ".join(
+            f"{b['name']}={cur}/{maxc if maxc > 0 else '-'}({score:.3f})"
+            for b, cur, maxc, score in scores
+        ),
         choice.get("name") if choice else "-",
-        next((s for b, s in scores if b is choice), 0.0) if choice else 0.0,
+        next((score for b, cur, maxc, score in scores if b is choice), 0.0) if choice else 0.0,
     )
 
     return choice
