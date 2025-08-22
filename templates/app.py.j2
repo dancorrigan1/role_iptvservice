@@ -48,7 +48,7 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
     (active_cons / max_connections) when this information is available.
     If no matching backends exist, fall back to the full list.
     Selection among equally loaded backends is random, but if the user has a
-    previously selected backend with comparable load it will be reused.
+    previously selected backend that still has capacity it will be reused.
     Reload backend metadata under a file lock so routing decisions reflect
     current connection counts even with concurrent workers. Log the score for
     every candidate and the chosen backend for observability.
@@ -90,20 +90,28 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
                     pass
                 return 1.0  # treat unknown as fully loaded
 
+            def has_capacity(b: Dict[str, Any]) -> bool:
+                try:
+                    cur = int(b.get("active_cons") or 0)
+                    maxc = int(b.get("max_connections") or 0)
+                    return maxc <= 0 or cur < maxc
+                except Exception:
+                    return True
+
             scores = [(b, load_ratio(b)) for b in pool]
-            available_scores = [(b, s) for b, s in scores if s < 1.0]
-            if not available_scores:
-                available_scores = scores
-            min_load = min(s for _, s in available_scores)
 
             last_name = USER_BACKENDS.get(username)
             if last_name:
-                for b, s in scores:
-                    if b.get("name") == last_name and s <= min_load:
+                for b in pool:
+                    if b.get("name") == last_name and has_capacity(b):
                         choice = b
                         break
 
             if choice is None:
+                available_scores = [(b, s) for b, s in scores if has_capacity(b)]
+                if not available_scores:
+                    available_scores = scores
+                min_load = min(s for _, s in available_scores)
                 candidates = [b for b, s in available_scores if s == min_load]
                 choice = random.choice(candidates)
 
