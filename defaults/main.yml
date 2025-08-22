@@ -28,6 +28,10 @@ role_iptvservice__python_packages:
 
 role_iptvservice__oos_url: https://yourwebsite.com/out_of_service.ts
 
+# Directory that holds static files served directly by nginx
+# The favicon is expected at <favicon_root>/favicon.ico
+role_iptvservice__favicon_root: "/var/www/html/{{ (role_iptvservice__iptv_hostname | first) | trim }}/iptvservice"
+
 
 role_iptvservice__kill_mode: false
 role_iptvservice__quarantine_path: "{{ role_iptvservice__auth_root }}/quarantine.json"

@@ -14,6 +14,7 @@ the same variables you already use in `role_iptvservice`.
 - `role_iptvservice__firewall_command`, `role_iptvservice__firewall_local_ip`, `role_iptvservice__proxy_start_port`
 - `role_iptvservice__known_ips` (not used by default)
 - `role_iptvservice__credentials` (exact shape you posted)
+- `role_iptvservice__favicon_root` (directory containing `favicon.ico`)
 
 ## Example play
 
