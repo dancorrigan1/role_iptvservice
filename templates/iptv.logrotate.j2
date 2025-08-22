@@ -1,0 +1,9 @@
+{{ role_iptvservice__log_dir }}/iptv-auth.log {{ role_iptvservice__log_dir }}/iptv-proxy-*.log {
+    daily
+    rotate 7
+    missingok
+    compress
+    delaycompress
+    notifempty
+    copytruncate
+}

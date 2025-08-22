@@ -9,6 +9,8 @@ User={{ role_iptvservice__auth_user }}
 Group={{ role_iptvservice__auth_group }}
 WorkingDirectory={{ role_iptvservice__auth_root }}
 ExecStart={{ role_iptvservice__auth_venv }}/bin/python {{ role_iptvservice__auth_root }}/app.py
+StandardOutput=append:{{ role_iptvservice__log_dir }}/iptv-auth.log
+StandardError=append:{{ role_iptvservice__log_dir }}/iptv-auth.log
 Restart=always
 RestartSec=2
 

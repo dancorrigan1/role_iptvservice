@@ -3,6 +3,30 @@
   ansible.builtin.setup:
   tags: always
 
+- name: Ensure iptv log directory exists
+  ansible.builtin.file:
+    path: "{{ role_iptvservice__log_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags: iptvproxy
+
+- name: Ensure logrotate installed
+  ansible.builtin.package:
+    name: logrotate
+    state: present
+  tags: iptvproxy
+
+- name: Install logrotate config for iptv services
+  ansible.builtin.template:
+    src: iptv.logrotate.j2
+    dest: /etc/logrotate.d/iptv
+    owner: root
+    group: root
+    mode: "0644"
+  tags: iptvproxy
+
 # Build __effective_backends deterministically (no funky filters)
 - name: Build backends (stable order & ports)
   ansible.builtin.set_fact:
