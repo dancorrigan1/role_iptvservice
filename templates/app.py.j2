@@ -84,25 +84,26 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
                 if not pool:
                     pool = BACKENDS
 
-                def load_ratio(b: Dict[str, Any]) -> float:
+                def free_ratio(b: Dict[str, Any]) -> float:
+                    """Fraction of available connection slots for backend."""
                     try:
-                        cur = int(b.get("active_cons") or 0)
-                        maxc = int(b.get("max_connections") or 0)
+                        cur = int(b.get("active_cons") or b.get("active") or 0)
+                        maxc = int(b.get("max_connections") or b.get("max") or 0)
                         if maxc > 0:
-                            return cur / maxc
+                            return (maxc - cur) / maxc
                     except Exception:
                         pass
-                    return 1.0  # treat unknown as fully loaded
+                    return 0.0  # treat unknown as no free capacity
 
                 def has_capacity(b: Dict[str, Any]) -> bool:
                     try:
-                        cur = int(b.get("active_cons") or 0)
-                        maxc = int(b.get("max_connections") or 0)
+                        cur = int(b.get("active_cons") or b.get("active") or 0)
+                        maxc = int(b.get("max_connections") or b.get("max") or 0)
                         return maxc <= 0 or cur < maxc
                     except Exception:
                         return True
 
-                scores = [(b, load_ratio(b)) for b in pool]
+                scores = [(b, free_ratio(b)) for b in pool]
 
                 last_name = USER_BACKENDS.get(username)
                 if last_name:
@@ -112,14 +113,16 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
                             break
 
                 if choice is None:
-                    available_scores = [(b, s) for b, s in scores if has_capacity(b)]
+                    available_scores = [(b, s) for b, s in scores if has_capacity(b) and s > 0]
                     if not available_scores:
                         available_scores = scores
-                    min_load = min(s for _, s in available_scores)
-                    candidates = [b for b, s in available_scores if s == min_load]
+                    max_free = max(s for _, s in available_scores)
+                    candidates = [b for b, s in available_scores if s == max_free]
                     choice = random.choice(candidates)
 
-                choice["active_cons"] = int(choice.get("active_cons") or 0) + 1
+                cur_active = int(choice.get("active_cons") or choice.get("active") or 0) + 1
+                choice["active_cons"] = cur_active
+                choice["active"] = cur_active
                 USER_BACKENDS[username] = choice.get("name")
                 f.seek(0)
                 json.dump(BACKENDS, f, indent=2)
@@ -134,7 +137,11 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
         "backend scores user=%s provider=%s %s -> %s %.3f",
         username,
         user_provider or "-",
-        " ".join(f"{b['name']}={s:.3f}" for b, s in scores),
+        " ".join(
+            f"{b['name']}={int(b.get('active_cons') or b.get('active') or 0)}/"
+            f"{int(b.get('max_connections') or b.get('max') or 0)}"
+            f"({s:.3f})" for b, s in scores
+        ),
         choice.get("name") if choice else "-",
         next((s for b, s in scores if b is choice), 0.0) if choice else 0.0,
     )
