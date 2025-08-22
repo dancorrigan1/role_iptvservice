@@ -71,6 +71,14 @@ server {
         return 302 {{ role_iptvservice__oos_url }};
     }
 
+    # ---------- Static favicon without auth ----------
+    location = /favicon.ico {
+        auth_request off;
+        root {{ role_iptvservice__favicon_root }};
+        access_log off;
+        log_not_found off;
+    }
+
     # ---------- Internal auth endpoint ----------
     location = /_auth {
         internal;
