@@ -16,6 +16,8 @@ ExecStart={{ role_iptvservice__iptv_proxy_path }} \
   --xtream-base-url ${XTREAM_BASE_URL} \
   --user ${PROXY_USER} \
   --password ${PROXY_PASS}
+StandardOutput=append:{{ role_iptvservice__log_dir }}/iptv-proxy-%i.log
+StandardError=append:{{ role_iptvservice__log_dir }}/iptv-proxy-%i.log
 Restart=always
 RestartSec=2
 

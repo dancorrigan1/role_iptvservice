@@ -5,6 +5,8 @@ role_iptvservice__auth_port: 9100
 role_iptvservice__auth_user: iptvauth
 role_iptvservice__auth_group: iptvauth
 
+role_iptvservice__log_dir: /var/log/iptv
+
 role_iptvservice__proxy_env_dir: /etc/iptv-proxy
 role_iptvservice__proxy_user: root          # matches how you currently run iptv-proxy
 role_iptvservice__proxy_group: root
