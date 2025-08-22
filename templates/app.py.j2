@@ -14,6 +14,7 @@ AUTH_ROOT  = "{{ role_iptvservice__auth_root }}"
 USERS_PATH = os.path.join(AUTH_ROOT, "users.json")
 BACKENDS_PATH = os.path.join(AUTH_ROOT, "backends.json")
 USER_BACKENDS_PATH = os.path.join(AUTH_ROOT, "user_backends.json")
+STATUS_PATH = os.path.join(AUTH_ROOT, "status.json")
 
 DESIRED_EXT = "{{ role_iptvservice__desired_ext }}"
 # Where to send viewers if live==false and they request a channel segment:
@@ -75,6 +76,15 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
                     USER_BACKENDS = json.load(uf)
                 except Exception:
                     USER_BACKENDS = {}
+                status_by_account: Dict[str, Dict[str, Any]] = {}
+                try:
+                    status_data = load_json(STATUS_PATH, {})
+                    for us in status_data.get("upstreams", []):
+                        acct = (us.get("account") or "").strip()
+                        if acct:
+                            status_by_account[acct] = us
+                except Exception:
+                    pass
                 if not BACKENDS:
                     return None
 
@@ -96,6 +106,16 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
                         maxc = int(b.get("max_connections") or b.get("max") or 0)
                     except Exception:
                         pass
+                    info = status_by_account.get((b.get("account") or "").strip())
+                    if info:
+                        try:
+                            cur = int(info.get("active") or cur)
+                        except Exception:
+                            pass
+                        try:
+                            maxc = int(info.get("max_connections") or info.get("max") or maxc)
+                        except Exception:
+                            pass
                     score = (maxc - cur) / maxc if maxc > 0 else 1.0
                     return cur, maxc, score
 
@@ -122,13 +142,14 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
                     candidates = [b for b, s in available_scores if s == max_free]
                     choice = random.choice(candidates)
 
-                cur_active = next((cur for b, cur, _, _ in scores if b is choice), 0) + 1
-                choice["active_cons"] = cur_active
-                choice["active"] = cur_active
                 USER_BACKENDS[username] = choice.get("name")
-                f.seek(0)
-                json.dump(BACKENDS, f, indent=2)
-                f.truncate()
+                if not status_by_account:
+                    cur_active = next((cur for b, cur, _, _ in scores if b is choice), 0) + 1
+                    choice["active_cons"] = cur_active
+                    choice["active"] = cur_active
+                    f.seek(0)
+                    json.dump(BACKENDS, f, indent=2)
+                    f.truncate()
                 uf.seek(0)
                 json.dump(USER_BACKENDS, uf, indent=2)
                 uf.truncate()
