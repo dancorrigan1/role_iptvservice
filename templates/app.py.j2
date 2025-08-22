@@ -47,7 +47,8 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
     Within that pool, choose the backend with the lowest load ratio
     (active_cons / max_connections) when this information is available.
     If no matching backends exist, fall back to the full list.
-    Selection among equally loaded backends is random.
+    Selection among equally loaded backends is random, but if the user has a
+    previously selected backend that still has capacity it will be reused.
     Reload backend metadata under a file lock so routing decisions reflect
     current connection counts even with concurrent workers. Log the score for
     every candidate and the chosen backend for observability.
@@ -57,61 +58,75 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
     scores: List[Tuple[Dict[str, Any], float]] = []
     choice: Optional[Dict[str, Any]] = None
     try:
-        with open(BACKENDS_PATH, "r+", encoding="utf-8") as f, \
-             open(USER_BACKENDS_PATH, "a+", encoding="utf-8") as uf:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            fcntl.flock(uf, fcntl.LOCK_EX)
-            uf.seek(0)
+        with open(BACKENDS_PATH, "r+", encoding="utf-8") as f:
             try:
-                BACKENDS = json.load(f)
-            except Exception:
-                BACKENDS = []
-            try:
-                USER_BACKENDS = json.load(uf)
-            except Exception:
-                USER_BACKENDS = {}
-            if not BACKENDS:
-                return None
-
-            user_info = USERS.get(username, {})
-            user_provider = (user_info.get("provider") or "").strip()
-            pool = [b for b in BACKENDS if (b.get("provider") or "").strip() == user_provider] if user_provider else []
-            if not pool:
-                pool = BACKENDS
-
-            def load_ratio(b: Dict[str, Any]) -> float:
+                uf = open(USER_BACKENDS_PATH, "r+", encoding="utf-8")
+            except FileNotFoundError:
+                uf = open(USER_BACKENDS_PATH, "w+", encoding="utf-8")
+            with uf:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                fcntl.flock(uf, fcntl.LOCK_EX)
+                uf.seek(0)
                 try:
-                    cur = int(b.get("active_cons") or 0)
-                    maxc = int(b.get("max_connections") or 0)
-                    if maxc > 0:
-                        return cur / maxc
+                    BACKENDS = json.load(f)
                 except Exception:
-                    pass
-                return 1.0  # treat unknown as fully loaded
+                    BACKENDS = []
+                try:
+                    USER_BACKENDS = json.load(uf)
+                except Exception:
+                    USER_BACKENDS = {}
+                if not BACKENDS:
+                    return None
 
-            scores = [(b, load_ratio(b)) for b in pool]
-            available_scores = [(b, s) for b, s in scores if s < 1.0] or scores
+                user_info = USERS.get(username, {})
+                user_provider = (user_info.get("provider") or "").strip()
+                pool = [b for b in BACKENDS if (b.get("provider") or "").strip() == user_provider] if user_provider else []
+                if not pool:
+                    pool = BACKENDS
 
-            last_name = USER_BACKENDS.get(username)
-            if last_name:
-                for b, s in scores:
-                    if b.get("name") == last_name and s < 1.0:
-                        choice = b
-                        break
+                def load_ratio(b: Dict[str, Any]) -> float:
+                    try:
+                        cur = int(b.get("active_cons") or 0)
+                        maxc = int(b.get("max_connections") or 0)
+                        if maxc > 0:
+                            return cur / maxc
+                    except Exception:
+                        pass
+                    return 1.0  # treat unknown as fully loaded
 
-            if choice is None:
-                min_load = min(s for _, s in available_scores)
-                candidates = [b for b, s in available_scores if s == min_load]
-                choice = random.choice(candidates)
+                def has_capacity(b: Dict[str, Any]) -> bool:
+                    try:
+                        cur = int(b.get("active_cons") or 0)
+                        maxc = int(b.get("max_connections") or 0)
+                        return maxc <= 0 or cur < maxc
+                    except Exception:
+                        return True
 
-            choice["active_cons"] = int(choice.get("active_cons") or 0) + 1
-            USER_BACKENDS[username] = choice.get("name")
-            f.seek(0)
-            json.dump(BACKENDS, f, indent=2)
-            f.truncate()
-            uf.seek(0)
-            json.dump(USER_BACKENDS, uf, indent=2)
-            uf.truncate()
+                scores = [(b, load_ratio(b)) for b in pool]
+
+                last_name = USER_BACKENDS.get(username)
+                if last_name:
+                    for b in pool:
+                        if b.get("name") == last_name and has_capacity(b):
+                            choice = b
+                            break
+
+                if choice is None:
+                    available_scores = [(b, s) for b, s in scores if has_capacity(b)]
+                    if not available_scores:
+                        available_scores = scores
+                    min_load = min(s for _, s in available_scores)
+                    candidates = [b for b, s in available_scores if s == min_load]
+                    choice = random.choice(candidates)
+
+                choice["active_cons"] = int(choice.get("active_cons") or 0) + 1
+                USER_BACKENDS[username] = choice.get("name")
+                f.seek(0)
+                json.dump(BACKENDS, f, indent=2)
+                f.truncate()
+                uf.seek(0)
+                json.dump(USER_BACKENDS, uf, indent=2)
+                uf.truncate()
     except Exception:
         return None
 
