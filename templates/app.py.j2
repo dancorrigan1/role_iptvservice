@@ -135,9 +135,16 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
                             break
 
                 if choice is None:
-                    available_scores = [(b, s) for b, cur, maxc, s in scores if has_capacity(cur, maxc) and s > 0]
+                    available_scores = [
+                        (b, s)
+                        for b, cur, maxc, s in scores
+                        if has_capacity(cur, maxc) and s > 0
+                    ]
                     if not available_scores:
-                        available_scores = [(b, s) for b, _, _, s in scores]
+                        logging.warning(
+                            "no backends with capacity for user=%s", username
+                        )
+                        return None
                     max_free = max(s for _, s in available_scores)
                     candidates = [b for b, s in available_scores if s == max_free]
                     choice = random.choice(candidates)
