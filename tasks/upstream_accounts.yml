@@ -45,7 +45,7 @@
 
     - debug:
         msg: "Quarantining {{ __ports_summary | length }} overloaded upstream(s): {{ __ports_summary | map(attribute='account') | join(', ') }}"
-
+- meta: end_play
 
 # Probe every upstream account with retries; tolerate non-200 and non-JSON
 - name: Upstream Accounts | Test Connect to Each Upstream Account (retry)
