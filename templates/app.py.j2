@@ -163,7 +163,6 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
                 if not status_by_account:
                     cur_active = next((cur for b, cur, _, _ in scores if b is choice), 0) + 1
                     choice["active_cons"] = cur_active
-                    choice["active"] = cur_active
                     f.seek(0)
                     json.dump(BACKENDS, f, indent=2)
                     f.truncate()
