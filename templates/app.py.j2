@@ -6,6 +6,7 @@ import os
 import re
 import fcntl
 import random
+import time
 from typing import Any, Dict, List, Optional, Tuple
 from flask import Flask, request, Response
 
@@ -15,6 +16,7 @@ USERS_PATH = os.path.join(AUTH_ROOT, "users.json")
 BACKENDS_PATH = os.path.join(AUTH_ROOT, "backends.json")
 USER_BACKENDS_PATH = os.path.join(AUTH_ROOT, "user_backends.json")
 STATUS_PATH = os.path.join(AUTH_ROOT, "status.json")
+STICKY_DURATION = 3600  # seconds a user->backend assignment remains valid
 
 DESIRED_EXT = "{{ role_iptvservice__desired_ext }}"
 # Where to send viewers if live==false and they request a channel segment:
@@ -40,7 +42,7 @@ def load_json(path: str, default: Any) -> Any:
 
 USERS: Dict[str, Dict[str, Any]] = load_json(USERS_PATH, {})
 BACKENDS: List[Dict[str, Any]] = load_json(BACKENDS_PATH, [])
-USER_BACKENDS: Dict[str, str] = load_json(USER_BACKENDS_PATH, {})
+USER_BACKENDS: Dict[str, Any] = load_json(USER_BACKENDS_PATH, {})
 
 def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
     """
@@ -127,7 +129,15 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
                     cur, maxc, score = backend_usage(b)
                     scores.append((b, cur, maxc, score))
 
-                last_name = USER_BACKENDS.get(username)
+                now = time.time()
+                entry = USER_BACKENDS.get(username)
+                last_name = None
+                if isinstance(entry, dict):
+                    ts = entry.get("ts", 0)
+                    if entry.get("name") and (now - ts) < STICKY_DURATION:
+                        last_name = entry.get("name")
+                elif isinstance(entry, str):
+                    pass  # legacy format without expiry
                 if last_name:
                     for b, cur, maxc, _ in scores:
                         if b.get("name") == last_name and has_capacity(cur, maxc):
@@ -149,7 +159,7 @@ def pick_backend_for_user(username: str) -> Optional[Dict[str, Any]]:
                     candidates = [b for b, s in available_scores if s == max_free]
                     choice = random.choice(candidates)
 
-                USER_BACKENDS[username] = choice.get("name")
+                USER_BACKENDS[username] = {"name": choice.get("name"), "ts": now}
                 if not status_by_account:
                     cur_active = next((cur for b, cur, _, _ in scores if b is choice), 0) + 1
                     choice["active_cons"] = cur_active
