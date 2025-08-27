@@ -25,13 +25,6 @@
           | selectattr('port',   'equalto', be.port)
           | list
         ) | length -%}
-        {%- if conns >= maxc -%}
-          {%- set _ = out.append({
-            'provider': be.provider,
-            'account':  be.account,
-            'port':     be.port,
-            'established': conns
-          }) -%}
         {%- endif -%}
       {%- endfor -%}
       {{ out }}
