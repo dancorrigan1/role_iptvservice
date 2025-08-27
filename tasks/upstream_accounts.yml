@@ -25,7 +25,6 @@
           | selectattr('port',   'equalto', be.port)
           | list
         ) | length -%}
-        {%- endif -%}
       {%- endfor -%}
       {{ out }}
 
