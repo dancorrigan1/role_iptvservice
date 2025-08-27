@@ -36,6 +36,9 @@
       {%- endfor -%}
       {{ out }}
 
+- debug:
+    var: __ports_summary
+
 - name: "Number Connections | When overloaded accounts are found"
   when: (__ports_summary | length) > 0
   block:
