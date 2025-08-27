@@ -91,6 +91,68 @@
   loop_control:
     label: "FAIL {{ item.account }}"
 
+# Update backends.json and status.json with latest connection counts
+- name: Upstream Accounts | Load current backends.json
+  ansible.builtin.slurp:
+    src: "{{ role_iptvservice__auth_root | trim }}/backends.json"
+  register: __backends_raw
+  when: (__successful_upstreams | length) > 0
+
+- name: Upstream Accounts | Merge connection info into backends
+  ansible.builtin.set_fact:
+    __backends_updated: >-
+      {%- set current = (__backends_raw.content | b64decode | from_json) | default([], true) -%}
+      {%- set out = [] -%}
+      {%- for be in current -%}
+        {%- set match = (__successful_upstreams | selectattr('account','equalto', be.account) | first) -%}
+        {%- if match -%}
+          {%- set _ = out.append(
+                be | combine({
+                    'active_cons': match.active_cons,
+                    'max_connections': match.max_connections,
+                    'active': match.active_cons
+                })
+            ) -%}
+        {%- else -%}
+          {%- set _ = out.append(be) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+  when: (__successful_upstreams | length) > 0
+
+- name: Upstream Accounts | Save updated backends.json
+  ansible.builtin.copy:
+    dest: "{{ role_iptvservice__auth_root | trim }}/backends.json"
+    content: "{{ __backends_updated | to_nice_json }}"
+    owner: "{{ role_iptvservice__auth_user }}"
+    group: "{{ role_iptvservice__auth_group }}"
+    mode: '0640'
+  when: (__successful_upstreams | length) > 0
+  notify: Restart iptv-auth
+
+- name: Upstream Accounts | Build status.json data
+  ansible.builtin.set_fact:
+    __status_data: >-
+      {%- set rows = [] -%}
+      {%- for s in __successful_upstreams -%}
+        {%- set _ = rows.append({
+          'account': s.account,
+          'active': s.active_cons,
+          'max_connections': s.max_connections
+        }) -%}
+      {%- endfor -%}
+      {{ {'upstreams': rows} }}
+  when: (__successful_upstreams | length) > 0
+
+- name: Upstream Accounts | Write status.json
+  ansible.builtin.copy:
+    dest: "{{ role_iptvservice__auth_root | trim }}/status.json"
+    content: "{{ __status_data | to_nice_json }}"
+    owner: "{{ role_iptvservice__auth_user }}"
+    group: "{{ role_iptvservice__auth_group }}"
+    mode: '0640'
+  when: (__successful_upstreams | length) > 0
+
 # ---------- Kill mode pipeline ----------
 - name: Upstream Accounts | Build path to backends.json
   ansible.builtin.set_fact:
