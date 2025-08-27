@@ -5,6 +5,45 @@
     state: present
   become: true
 
+- name: "Number Connections | Gather facts on sockets"
+  community.general.listen_ports_facts:
+    include_non_listening: true
+
+- name: "Number Connections | Build overload summary from __effective_backends"
+  ansible.builtin.set_fact:
+    __ports_summary: >-
+      {%- set out = [] -%}
+      {%- set maxc = (role_iptvservice__max_connections | int) -%}
+      {%- set lip  = role_iptvservice__firewall_local_ip -%}
+      {%- for be in __effective_backends -%}
+        {%- set conns = (
+          ansible_facts.tcp_listen
+          | selectattr('state', 'equalto', 'ESTABLISHED')
+          | selectattr('name',  'equalto', 'iptv-proxy')
+          | selectattr('address','equalto', lip)
+          | rejectattr('foreign_address', 'match', lip)
+          | selectattr('port',   'equalto', be.port)
+          | list
+        ) | length -%}
+        {%- if conns >= maxc -%}
+          {%- set _ = out.append({
+            'provider': be.provider,
+            'account':  be.account,
+            'port':     be.port,
+            'established': conns
+          }) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+
+- name: "Number Connections | When overloaded accounts are found"
+  when: (__ports_summary | length) > 0
+  block:
+
+    - debug:
+        msg: "Quarantining {{ __ports_summary | length }} overloaded upstream(s): {{ __ports_summary | map(attribute='account') | join(', ') }}"
+
+
 # Probe every upstream account with retries; tolerate non-200 and non-JSON
 - name: Upstream Accounts | Test Connect to Each Upstream Account (retry)
   ansible.builtin.uri:
@@ -36,6 +75,7 @@
         {%- set js = (r.json if (r.json is defined and r.json is mapping) else {}) -%}
         {%- set ui = js.get('user_info', {}) -%}
         {%- set si = js.get('server_info', {}) -%}
+
         {%- set rec = {
               'provider': prov.name,
               'provider_url': prov.url,
