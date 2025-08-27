@@ -25,6 +25,12 @@
           | selectattr('port',   'equalto', be.port)
           | list
         ) | length -%}
+        {%- set _ = out.append({
+          'provider': be.provider,
+          'account':  be.account,
+          'port':     be.port,
+          'established': conns
+        }) -%}
       {%- endfor -%}
       {{ out }}
 
