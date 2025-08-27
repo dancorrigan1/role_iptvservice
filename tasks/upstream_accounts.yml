@@ -29,6 +29,8 @@
       {{ out }}
 
 - debug:
+    var: ansible_facts.tcp_listen
+- debug:
     var: __ports_summary
 
 - name: "Number Connections | When overloaded accounts are found"
