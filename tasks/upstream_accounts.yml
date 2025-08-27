@@ -106,15 +106,20 @@
       {%- for be in current -%}
         {%- set match = (__successful_upstreams | selectattr('account','equalto', be.account) | first) -%}
         {%- if match -%}
-          {%- set _ = out.append(
-                be | combine({
+          {%- set merged = be | combine({
                     'active_cons': match.active_cons,
-                    'max_connections': match.max_connections,
-                    'active': match.active_cons
-                })
-            ) -%}
+                    'max_connections': match.max_connections
+                }) -%}
+          {%- set cleaned = merged | dict2items
+                                   | rejectattr('key', 'equalto', 'active')
+                                   | items2dict -%}
+          {%- set _ = out.append(cleaned) -%}
         {%- else -%}
-          {%- set _ = out.append(be) -%}
+          {%- set _ = out.append(
+                be | dict2items
+                   | rejectattr('key', 'equalto', 'active')
+                   | items2dict
+            ) -%}
         {%- endif -%}
       {%- endfor -%}
       {{ out }}
