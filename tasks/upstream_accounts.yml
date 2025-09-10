@@ -68,7 +68,7 @@
       {%- set out = [] -%}
       {%- for it in __successful_upstreams -%}
         {%- if (it.active_cons is not none) and (it.max_connections is not none)
-               and ((it.active_cons | int) >= (it.max_connections | int)) -%}
+               and ((it.active_cons | int) > (it.max_connections | int)) -%}
           {%- set _ = out.append(it) -%}
         {%- endif -%}
       {%- endfor -%}
