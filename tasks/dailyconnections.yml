@@ -209,14 +209,47 @@
           {%- set all_ips = (__unique_user_ips | map(attribute='ip_list') | flatten | unique | list) -%}
           {%- for i in all_ips -%}
             {%- set rev = lookup('community.general.dig', i, qtype='PTR', fail_on_error=false, retry_servfail=true) -%}
-            {%- set org = (lookup('ansible.builtin.pipe', 'whois ' ~ i) | split('\n')
-                           | select('search', 'org-name|orgname|Organization') | first
-                           | default('') | split(':') | last | trim) -%}
+            {%- set whois_output = lookup('ansible.builtin.pipe', 'whois ' ~ i) | default('', true) -%}
+            {%- set whois_lines = whois_output.split('\n') -%}
+            {%- set org_line = (whois_lines
+                                | select('search', '(?i)^(org-name|orgname|organization|descr|isp|owner|netname)\\s*:')
+                                | first | default('')) -%}
+            {%- set org = (org_line.split(':', 1)[1] if (':' in org_line) else '') | default('') | trim -%}
+            {%- if org == '' -%}
+              {%- set org = 'unknown' -%}
+            {%- endif -%}
             {%- set recent_line = (__iptv_log | select('search', i) | last | default('')) -%}
-            {%- set recent = (recent_line.split(' ') | list | first | default('')) -%}
+            {%- set recent_match = (recent_line | regex_search('\\[(.*?)\\]') | default('', true)) -%}
+            {%- set recent = (recent_match | regex_replace('^\\[|\\]$', '') | default('', true)) -%}
             {%- set _ = rows.append({'ip': i, 'reverse': rev, 'org': org, 'recent': recent}) -%}
           {%- endfor -%}
           {{ rows }}
+
+    - name: "Daily Connections | Map users to provider names"
+      ansible.builtin.set_fact:
+        __user_provider_map: >-
+          {%- set mapping = {} -%}
+          {%- for row in __unique_user_ips -%}
+            {%- set ips = row.ip_list | default([]) -%}
+            {%- set providers = [] -%}
+            {%- for ip in ips -%}
+              {%- set info = (__ip_info | selectattr('ip', '==', ip) | list | first) -%}
+              {%- if info is defined and info is not none and info.org is defined and info.org != 'unknown' -%}
+                {%- if info.org not in providers -%}
+                  {%- set _ = providers.append(info.org) -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- set inferred = (providers | join(', ')) -%}
+            {%- if (inferred | length) == 0 -%}
+              {%- set inferred = row.provider | default('unknown') -%}
+            {%- endif -%}
+            {%- if (inferred | length) == 0 -%}
+              {%- set inferred = 'unknown' -%}
+            {%- endif -%}
+            {%- set _ = mapping.update({row.user: inferred}) -%}
+          {%- endfor -%}
+          {{ mapping }}
 
     # ------------------------------------------------------------
     # Write reports and email

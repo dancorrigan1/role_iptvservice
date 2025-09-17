@@ -10,16 +10,22 @@ User Usage Summary
 ==================
 
 {% for user in __unique_user_ips %}
+{% set provider_name = (__user_provider_map[user.user]
+                        if (__user_provider_map is defined and user.user in __user_provider_map)
+                        else user.provider | default('unknown')) %}
 --------------------------
-{{ user.user }} on {{ user.provider }}
+{{ user.user }} on {{ provider_name if provider_name else 'unknown' }}
 ---------------------------
 {% if user.ip_list | length > 0 %}
 {% for ip in user.ip_list | unique %}
 {% if __ip_status | selectattr('user', '==', user.user) | selectattr('ip', '==', ip) | map(attribute='new') | first == 'true' %}New IP:{% else %}IP:{% endif %} {% if role_iptvservice__known_ips[ip] is defined %}{{ role_iptvservice__known_ips[ip]['name'] }} / {% endif %}{{ ip }}{% if __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first | length > 0 and __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first != 'NXDOMAIN' %} / {{ __ip_info | selectattr('ip', '==', ip) | map(attribute='reverse') | first }}
 {% else %} / No Reverse DNS
 {% endif %}
-IP Org: {{ __ip_info | selectattr('ip', '==', ip) | map(attribute='org') | first }}
-Most Recent Login: {{ __ip_info | selectattr('ip', '==', ip) | map(attribute='recent') | first | split(':') | first }}
+{% set ip_info_match = __ip_info | selectattr('ip', '==', ip) | list | first | default({}) %}
+{% set ip_org = ip_info_match.org | default('unknown') %}
+{% set recent_login = ip_info_match.recent | default('') %}
+IP Org: {{ ip_org if ip_org else 'unknown' }}
+Most Recent Login: {{ recent_login if recent_login else 'unknown' }}
 User Agent(s):
 {% set agent_list =  __iptv_log | select('search', '/' ~ user.user) | select('search', ip) | map('split', '\"') | flatten | select('search', role_iptvservice__allowed_user_agents | join('|')) | unique %}
 {% for agent in agent_list  %}

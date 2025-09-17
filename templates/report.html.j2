@@ -191,7 +191,10 @@
         <tr>
           <td>{{ real_name | default('—') }}</td>
           <td><span class="chip">{{ user.user }}</span></td>
-          <td>{{ user.provider | default('unknown') }}</td>
+          {% set provider_name = (__user_provider_map[user.user]
+                                   if (__user_provider_map is defined and user.user in __user_provider_map)
+                                   else user.provider | default('unknown')) %}
+          <td>{{ provider_name if provider_name else 'unknown' }}</td>
           <td>
             {% if (user.ip_list | length) == 0 %}
               <span class="muted">No IPs observed.</span>
