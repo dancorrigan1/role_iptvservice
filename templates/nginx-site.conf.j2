@@ -12,6 +12,19 @@ map $uri $api_uri_stripped {
     default               $uri;
 }
 
+# Flag player_api calls that should bypass response rewriting
+map $uri $is_player_api {
+    "~*^/player_api\.php$"        1;
+    "~*^/[^/]+/player_api\.php$"  1;
+    default                        0;
+}
+
+map "$is_player_api:$arg_action" $api_simple_table_passthru {
+    "1:get_simple_data_table" 1;
+    "1:get_short_epg"        1;
+    default                    0;
+}
+
 {% if role_iptvservice__enable_ua_filter | bool %}
 map $http_user_agent $ua_ok {
     default 0;
@@ -53,6 +66,7 @@ server {
 
     # If auth_request returns 401/403, handle here (may carry redirect hint)
     error_page 401 403 = @auth_fail;
+    error_page 418 = @player_api_simple_table;
 
     {% if role_iptvservice__enable_ua_filter | bool %}
     if ($ua_ok = 0) { return 403; }
@@ -215,6 +229,10 @@ server {
         if ($saved_user = "") { set $saved_user $path_user; }
         set $saved_pass $arg_password;
 
+        if ($api_simple_table_passthru = 1) {
+            return 418;
+        }
+
         auth_request /_auth;
 
         auth_request_set $backend       $upstream_http_x_backend;
@@ -259,6 +277,34 @@ server {
         sub_filter "\"rtmp_port\":{{ port }}" "\"rtmp_port\":80";
         sub_filter "\"rtmp_port\":\"{{ port }}\"" "\"rtmp_port\":\"80\"";
         {% endfor %}
+
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 1h;
+        send_timeout 1h;
+    }
+
+    # ---------- player_api simple data table (preserve upstream formatting) ----------
+    location @player_api_simple_table {
+        set $saved_args $args;
+        set $saved_user $arg_username;
+        if ($saved_user = "") { set $saved_user $path_user; }
+        set $saved_pass $arg_password;
+
+        auth_request /_auth;
+
+        auth_request_set $backend       $upstream_http_x_backend;
+        auth_request_set $basic         $upstream_http_x_basic;
+        auth_request_set $fwd_args      $upstream_http_x_rewrite_args;
+        auth_request_set $auth_redirect $upstream_http_x_redirect;
+
+        proxy_pass $backend$api_uri_stripped?$fwd_args;
+
+        proxy_set_header Authorization $basic;
+        proxy_set_header Host $proxy_host_hdr;
+        proxy_set_header Accept-Encoding $http_accept_encoding;
 
         proxy_http_version 1.1;
         proxy_set_header Connection "";
