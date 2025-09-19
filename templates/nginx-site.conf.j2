@@ -12,6 +12,23 @@ map $uri $api_uri_stripped {
     default               $uri;
 }
 
+# Flag player_api calls that should bypass response rewriting
+map $uri $is_player_api {
+    "~*^/player_api\.php$"        1;
+    "~*^/[^/]+/player_api\.php$"  1;
+    default                        0;
+}
+
+map "$is_player_api:$arg_action" $api_simple_table_passthru {
+    "~*^1:(?:get_simple_data_table|get_simple_data_table_v2|get_short_epg|get_epg)$" 1;
+    default                                                                 0;
+}
+
+map $api_simple_table_passthru $player_api_accept_encoding {
+    1       $http_accept_encoding;
+    default "";
+}
+
 {% if role_iptvservice__enable_ua_filter | bool %}
 map $http_user_agent $ua_ok {
     default 0;
@@ -178,7 +195,105 @@ server {
         send_timeout 1h;
     }
 
-    # ---------- API (player_api.php, get.php, xmltv.php, etc.) ----------
+    # ---------- XMLTV (allow upstream compression to pass through) ----------
+    location ~* ^/(?:[^/]+/)?xmltv\.php$ {
+        set $saved_args $args;
+        set $saved_user $arg_username;
+        if ($saved_user = "") { set $saved_user $path_user; }
+        set $saved_pass $arg_password;
+
+        auth_request /_auth;
+
+        auth_request_set $backend       $upstream_http_x_backend;
+        auth_request_set $basic         $upstream_http_x_basic;
+        auth_request_set $fwd_args      $upstream_http_x_rewrite_args;
+        auth_request_set $auth_redirect $upstream_http_x_redirect;
+
+        proxy_pass $backend$api_uri_stripped?$fwd_args;
+
+        proxy_set_header Authorization $basic;
+        proxy_set_header Host $proxy_host_hdr;
+        proxy_set_header Accept-Encoding $http_accept_encoding;
+
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_read_timeout 1h;
+        send_timeout 1h;
+    }
+
+    # ---------- player_api (preserve EPG payloads) ----------
+    location ~* ^/(?:[^/]+/)?player_api\.php$ {
+        set $saved_args $args;
+        set $saved_user $arg_username;
+        if ($saved_user = "") { set $saved_user $path_user; }
+        set $saved_pass $arg_password;
+
+        auth_request /_auth;
+
+        auth_request_set $backend       $upstream_http_x_backend;
+        auth_request_set $basic         $upstream_http_x_basic;
+        auth_request_set $fwd_args      $upstream_http_x_rewrite_args;
+
+        auth_request_set $proxy_user    $upstream_http_x_proxy_user;
+        auth_request_set $proxy_pass    $upstream_http_x_proxy_pass;
+        auth_request_set $display_user  $upstream_http_x_display_user;
+        auth_request_set $display_pass  $upstream_http_x_display_pass;
+        auth_request_set $desired_ext   $upstream_http_x_desired_ext;
+        auth_request_set $auth_redirect $upstream_http_x_redirect;
+
+        set $rewrite_user $display_user;
+        if ($api_simple_table_passthru = 1) { set $rewrite_user $proxy_user; }
+
+        set $rewrite_pass $display_pass;
+        if ($api_simple_table_passthru = 1) { set $rewrite_pass $proxy_pass; }
+
+        set $rewrite_ext_empty "\"$desired_ext\"";
+        if ($api_simple_table_passthru = 1) { set $rewrite_ext_empty "\"\""; }
+
+        set $rewrite_ext_from_null "\"$desired_ext\"";
+        if ($api_simple_table_passthru = 1) { set $rewrite_ext_from_null "null"; }
+
+        proxy_pass $backend$api_uri_stripped?$fwd_args;
+
+        proxy_set_header Authorization $basic;
+        proxy_set_header Host $proxy_host_hdr;
+
+        proxy_set_header Accept-Encoding $player_api_accept_encoding;
+        gunzip on;
+
+        sub_filter_once off;
+        sub_filter_types *;
+
+        sub_filter "\"username\":\"$proxy_user\"" "\"username\":\"$rewrite_user\"";
+        sub_filter "\"password\":\"$proxy_pass\"" "\"password\":\"$rewrite_pass\"";
+        sub_filter "\"container_extension\":\"\"" "\"container_extension\":$rewrite_ext_empty";
+        sub_filter "\"container_extension\":null"  "\"container_extension\":$rewrite_ext_from_null";
+
+        {% for port in backend_ports %}
+        sub_filter "http://{{ first_host }}:{{ port }}/" "http://$host/";
+        {% endfor %}
+        sub_filter "\"url\":\"http://{{ first_host }}\"" "\"url\":\"http://$host\"";
+        sub_filter "\"url\":\"https://{{ first_host }}\"" "\"url\":\"http://$host\"";
+        sub_filter "\"url\":\"{{ first_host }}\"" "\"url\":\"$host\"";
+
+        {% for port in backend_ports %}
+        sub_filter "\"port\":{{ port }}" "\"port\":80";
+        sub_filter "\"port\":\"{{ port }}\"" "\"port\":\"80\"";
+        sub_filter "\"https_port\":{{ port }}" "\"https_port\":443";
+        sub_filter "\"https_port\":\"{{ port }}\"" "\"https_port\":\"443\"";
+        sub_filter "\"rtmp_port\":{{ port }}" "\"rtmp_port\":80";
+        sub_filter "\"rtmp_port\":\"{{ port }}\"" "\"rtmp_port\":\"80\"";
+        {% endfor %}
+
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 1h;
+        send_timeout 1h;
+    }
+
+    # ---------- API (get.php, panel_api.php, etc.) ----------
     location / {
         if ($uri = "/") {
           return 302 {{ role_iptvservice__root_redirect }};
