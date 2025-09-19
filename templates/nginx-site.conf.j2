@@ -178,7 +178,33 @@ server {
         send_timeout 1h;
     }
 
-    # ---------- API (player_api.php, get.php, xmltv.php, etc.) ----------
+    # ---------- XMLTV (allow upstream compression to pass through) ----------
+    location ~* ^/(?:[^/]+/)?xmltv\.php$ {
+        set $saved_args $args;
+        set $saved_user $arg_username;
+        if ($saved_user = "") { set $saved_user $path_user; }
+        set $saved_pass $arg_password;
+
+        auth_request /_auth;
+
+        auth_request_set $backend       $upstream_http_x_backend;
+        auth_request_set $basic         $upstream_http_x_basic;
+        auth_request_set $fwd_args      $upstream_http_x_rewrite_args;
+        auth_request_set $auth_redirect $upstream_http_x_redirect;
+
+        proxy_pass $backend$api_uri_stripped?$fwd_args;
+
+        proxy_set_header Authorization $basic;
+        proxy_set_header Host $proxy_host_hdr;
+        proxy_set_header Accept-Encoding $http_accept_encoding;
+
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_read_timeout 1h;
+        send_timeout 1h;
+    }
+
+    # ---------- API (player_api.php, get.php, etc.) ----------
     location / {
         if ($uri = "/") {
           return 302 {{ role_iptvservice__root_redirect }};
